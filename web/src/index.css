@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Slim scrollbars across the app — kanban columns and the graph view get
+   noisy fast otherwise. */
+* {
+  scrollbar-width: thin;
+}

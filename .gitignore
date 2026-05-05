@@ -1,0 +1,18 @@
+/dist/
+/bin/
+/.env
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.test
+*.out
+.DS_Store
+
+# Web build artifacts get embedded into the server binary; keep the
+# placeholder so go:embed succeeds on a fresh checkout, but ignore the
+# real bundle.
+/server/web/dist/*
+!/server/web/dist/.gitkeep
+
+.cache/

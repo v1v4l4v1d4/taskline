@@ -1,0 +1,23 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
+// Vite directly emits to ../server/web/dist so go:embed picks it up at
+// `go build` time. Keep this in sync with server/web/embed.go.
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  build: {
+    outDir: "../server/web/dist",
+    emptyOutDir: true,
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      // During `pnpm dev`, forward API calls to the locally-running
+      // taskline-server so we can develop against real data without CORS
+      // gymnastics in the browser.
+      "/api": "http://127.0.0.1:8787",
+      "/healthz": "http://127.0.0.1:8787",
+    },
+  },
+});

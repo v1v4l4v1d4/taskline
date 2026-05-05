@@ -1,0 +1,58 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as api from "../lib/api";
+
+export function useProjects() {
+  return useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
+}
+
+export function useTasks(projectIdOrName: string | null) {
+  return useQuery({
+    queryKey: ["tasks", projectIdOrName],
+    queryFn: () => api.listTasks(projectIdOrName!),
+    enabled: !!projectIdOrName,
+  });
+}
+
+export function useCreateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, description }: { name: string; description: string }) =>
+      api.createProject(name, description),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+export function useCreateTask(projectIdOrName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof api.createTask>[1]) =>
+      api.createTask(projectIdOrName, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectIdOrName] }),
+  });
+}
+
+export function useUpdateTask(projectIdOrName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof api.updateTask>[1] }) =>
+      api.updateTask(id, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectIdOrName] }),
+  });
+}
+
+export function useDeleteTask(projectIdOrName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteTask(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectIdOrName] }),
+  });
+}
+
+export function useAddDependency(projectIdOrName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, dependsOn }: { taskId: string; dependsOn: string }) =>
+      api.addDependency(taskId, dependsOn),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectIdOrName] }),
+  });
+}

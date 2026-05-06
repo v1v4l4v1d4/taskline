@@ -170,7 +170,7 @@ taskline task upload <id> --file ./screenshot.png
   delete + dependency commands return `{"deleted": true, "id": ...}` /
   `{"task_id": ..., "depends_on": ...}` so you can pipe into `jq`.
 
-## Recommended agent loop
+## Stage playbook
 
 When asked to "work the queue":
 
@@ -178,14 +178,106 @@ When asked to "work the queue":
 2. If `task` is `null`, report there's nothing runnable and stop.
 3. Read `title` + `description` (and `images` if present — server
    stores them under `$TASKLINE_IMAGES_DIR/<task-id>/`).
-4. Move the task forward as you progress:
-   - Start working: `taskline task update <id> --state dev`
-   - Hand off to review: `taskline task update <id> --state review`
-   - Finished: `taskline task update <id> --state done`
+4. Walk the task through the stages below. Each stage describes the
+   actions, the literal command to advance, and when the stage may be
+   skipped.
 5. Loop back to step 1.
 
-This is intentionally chatty so the user can watch state in another
-terminal via `taskline task list`.
+Each stage has the same shape: **Trigger** (what just happened) →
+**Actions** → **Advance** (literal CLI command) → **Skip when**
+(escape clause). Higher-order skills are referenced by capability,
+with a Superpowers skill name in parentheses for harnesses that have
+them — drop the parenthetical if the skill isn't installed.
+
+### created → design
+
+- **Trigger:** the agent has just claimed the task.
+- **Actions:**
+  1. `git checkout main && git pull`
+  2. `git checkout -b feature/<short-slug>` (slug derived from the
+     task title — keep it short, kebab-case).
+  3. Confirm the working tree is clean.
+- **Advance:** `taskline task update <id> --state design`
+- **Skip when:** the change qualifies as fast-path (see below).
+
+### design → dev
+
+- **Trigger:** branch exists, task title + description are loaded.
+- **Actions:**
+  1. Brainstorm the approach — explore intent, list 2-3 options, pick
+     one. Auto-mode (no human checkpoint).
+     Capability: brainstorming (e.g. `superpowers:brainstorming` if
+     available).
+  2. Plan the work — break the chosen approach into ordered steps and
+     identify the test strategy.
+     Capability: plan writing (e.g. `superpowers:writing-plans` if
+     available).
+  3. Capture the decision in a short note (commit body or one-paragraph
+     spec) so the dev phase has a contract.
+- **Advance:** `taskline task update <id> --state dev`
+- **Skip when:** the change is mechanical (rename, formatting,
+  single-line config) — go straight to dev.
+
+### dev → review
+
+- **Trigger:** design note in hand.
+- **Actions** (test-first):
+  1. Write or extend failing tests for the new behavior.
+  2. Implement until the tests pass.
+  3. Run the full project test suite for whatever you touched
+     (e.g. `( cd server && go test ./... )`, `( cd cli && go test ./... )`,
+     `( cd web && pnpm build )`). Lint/format as the project requires.
+  4. Stage and commit. Conventional, minimal commit messages.
+- **Advance:** `taskline task update <id> --state review`
+- **Skip when:** never. Tests are the gate, not the ceremony.
+
+### review → done
+
+- **Trigger:** implementation committed on the feature branch.
+- **Actions:**
+  1. Self code-review — spot bugs, dead code, boundary issues.
+     Capability: code review (e.g. `code-review:code-review` if
+     available).
+  2. Fix anything the review surfaces; re-run tests after each fix.
+  3. Push the branch: `git push -u origin <branch>`.
+  4. Open a PR: `gh pr create` with title, summary, and a test plan.
+  5. Wait for CI. If it fails, fix the root cause locally, re-run
+     tests, push.
+  6. Read PR comments
+     (`gh api repos/<owner>/<repo>/pulls/<n>/comments`).
+     Address each one; re-run tests after each batch of fixes; push.
+- **Advance:** `taskline task update <id> --state done` *only after*
+  CI is green and review comments are addressed.
+- **Drop back to dev** when the review or CI surfaces a real defect.
+  The bidirectional state machine exists for exactly this — don't
+  delete-and-recreate.
+
+### done — wrap-up
+
+- **Trigger:** PR approved + CI green.
+- **Actions:**
+  1. `gh pr merge --squash` (or the project's conventional style).
+  2. `git checkout main && git pull`
+  3. Delete the local feature branch.
+- The taskline task is already `done`; this stage is repo hygiene.
+
+## Fast path
+
+A task qualifies as fast-path when **all** of:
+
+- single file changed,
+- no behavior change visible to other code,
+- no test scaffolding or new dependency.
+
+Examples: typo fix in a comment, raising a log level, bumping a
+constant. The loop collapses to:
+
+```
+created → dev → done
+```
+
+No branch, no design note, no PR. Commit directly on main with a
+one-line message. The state machine still records what happened.
 
 ## Failure modes you will see
 

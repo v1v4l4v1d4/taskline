@@ -4,7 +4,7 @@
 
 **Goal:** Replace the thin "Recommended agent loop" section in `skills/taskline-management/SKILL.md` with a five-stage playbook plus a fast-path escape hatch, per the spec at `docs/superpowers/specs/2026-05-06-skill-stage-actions-design.md`.
 
-**Architecture:** Single Markdown file edit. TDD via a small shell-driven smoke test that (1) verifies the YAML frontmatter still parses and (2) asserts each of the five stage subsection headers and the fast-path callout are present.
+**Architecture:** Single Markdown file edit. TDD via a small shell-driven smoke test that (1) verifies the YAML frontmatter still parses and (2) asserts each of the five stage subsection headers and the fast-path callout are present. The test lives at `scripts/test-skill.sh` — outside the skill directory, since the skill itself is symlinked into other projects and shouldn't ship a test runner.
 
 **Tech Stack:** Markdown + a Bash + Python3 smoke test (Python is on every macOS/Linux dev box; PyYAML is in the standard distribution path via `pip install pyyaml`, but the test uses only `re` + `tomllib`-free parsing — no external deps needed).
 
@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- `skills/taskline-management/test_skill.sh` — new smoke test, executable.
+- `scripts/test-skill.sh` — new smoke test, executable. Project-level tooling, sibling to `build.sh` and `install-local.sh`.
 - `skills/taskline-management/SKILL.md` — modified: agent-loop section replaced.
 
 Files that change together stay together: the SKILL is one unit, test next to it.
@@ -22,11 +22,11 @@ Files that change together stay together: the SKILL is one unit, test next to it
 ### Task 1: Smoke test that fails today
 
 **Files:**
-- Create: `skills/taskline-management/test_skill.sh`
+- Create: `scripts/test-skill.sh`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `skills/taskline-management/test_skill.sh`:
+Create `scripts/test-skill.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -76,12 +76,12 @@ PY
 Then make it executable:
 
 ```bash
-chmod +x skills/taskline-management/test_skill.sh
+chmod +x scripts/test-skill.sh
 ```
 
 - [ ] **Step 2: Run the test, confirm it fails**
 
-Run: `./skills/taskline-management/test_skill.sh`
+Run: `./scripts/test-skill.sh`
 Expected: exit 1 with `FAIL: missing sections: ### created → design, ### design → dev, ### dev → review, ### review → done, ## Fast path`
 
 (SKILL.md doesn't have those headers yet — that's the point.)
@@ -89,7 +89,7 @@ Expected: exit 1 with `FAIL: missing sections: ### created → design, ### desig
 - [ ] **Step 3: Commit the test**
 
 ```bash
-git add skills/taskline-management/test_skill.sh
+git add scripts/test-skill.sh
 git commit -m "test: smoke check for SKILL.md stage sections"
 ```
 
@@ -238,7 +238,7 @@ one-line message. The state machine still records what happened.
 
 - [ ] **Step 2: Run the smoke test, confirm it passes**
 
-Run: `./skills/taskline-management/test_skill.sh`
+Run: `./scripts/test-skill.sh`
 Expected: prints `ok` and exits 0.
 
 - [ ] **Step 3: Commit the doc change**

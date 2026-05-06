@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # Smoke test for skills/taskline-management/SKILL.md.
-# Exits non-zero if the frontmatter is malformed or any required
-# stage section is missing. Has zero non-stdlib dependencies.
+# Lives outside the skill dir on purpose — the skill is symlinked into
+# ~/.agents/skills/ and ~/.claude/skills/ by scripts/install-local.sh,
+# and shipping a test runner along with it would clutter every harness
+# that imports the skill.
+#
+# Exits non-zero if the frontmatter is malformed or any required stage
+# section is missing. Has zero non-stdlib dependencies.
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 python3 - <<'PY'
 import re, sys
 
-with open("SKILL.md", encoding="utf-8") as f:
+with open("skills/taskline-management/SKILL.md", encoding="utf-8") as f:
     content = f.read()
 
 m = re.match(r"^---\n(.*?)\n---\n(.*)", content, re.DOTALL)

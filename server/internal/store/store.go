@@ -74,28 +74,54 @@ func New(path string) (*Store, error) {
 
 // applyMigrations advances the database from its current PRAGMA
 // user_version up through the latest entry in schemaMigrations, running
-// each step exactly once. Versions must be strictly increasing in the
-// schemaMigrations slice.
+// each step exactly once. Versions in schemaMigrations must be strictly
+// increasing; this is verified at runtime so an out-of-order entry is
+// caught at startup rather than silently skipped.
+//
+// Each migration runs inside its own transaction together with the
+// matching `PRAGMA user_version` bump, so a failure mid-step rolls back
+// cleanly instead of leaving the schema half-applied with a stale
+// version stamp.
 func applyMigrations(db *sql.DB) error {
 	ctx := context.Background()
 	var current int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
 		return fmt.Errorf("read user_version: %w", err)
 	}
+	lastVersion := -1
 	for _, m := range schemaMigrations {
+		if m.version <= lastVersion {
+			return fmt.Errorf("schemaMigrations must be strictly increasing: v%d follows v%d", m.version, lastVersion)
+		}
+		lastVersion = m.version
 		if m.version <= current {
 			continue
 		}
-		if _, err := db.ExecContext(ctx, m.sql); err != nil {
-			return fmt.Errorf("apply migration v%d: %w", m.version, err)
-		}
-		// PRAGMA user_version doesn't accept parameter binding; format the
-		// version literal directly. m.version is a hard-coded int so there
-		// is no injection risk.
-		if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
-			return fmt.Errorf("stamp user_version=%d: %w", m.version, err)
+		if err := applyOneMigration(ctx, db, m); err != nil {
+			return err
 		}
 		current = m.version
+	}
+	return nil
+}
+
+func applyOneMigration(ctx context.Context, db *sql.DB, m migration) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for v%d: %w", m.version, err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+		return fmt.Errorf("apply migration v%d: %w", m.version, err)
+	}
+	// PRAGMA user_version doesn't accept parameter binding; format the
+	// version literal directly. m.version is a hard-coded int so there
+	// is no injection risk.
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+		return fmt.Errorf("stamp user_version=%d: %w", m.version, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration v%d: %w", m.version, err)
 	}
 	return nil
 }

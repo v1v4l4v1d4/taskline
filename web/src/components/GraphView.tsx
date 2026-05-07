@@ -42,7 +42,12 @@ export function GraphView({ project }: Props) {
     const rowSpacing = 110;
     const cols = {} as Record<TaskState, Task[]>;
     for (const s of STATES) cols[s] = [];
-    for (const t of tasks) cols[t.state].push(t);
+    // Defensive: a task may carry a state the web doesn't know about
+    // (e.g. server is one revision ahead of the bundled web). Skip
+    // those rather than crashing on undefined.push.
+    for (const t of tasks) {
+      if (cols[t.state]) cols[t.state].push(t);
+    }
     for (const s of STATES) {
       cols[s].sort((a, b) => b.priority - a.priority);
     }

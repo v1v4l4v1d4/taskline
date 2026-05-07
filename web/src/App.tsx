@@ -11,7 +11,12 @@ type View = "kanban" | "graph";
 export default function App() {
   // ?project=<name|id> survives page reload and back/forward; nuqs
   // keeps the URL and state in lockstep without a router dep.
-  const [projectKey, setProjectKey] = useQueryState("project");
+  // history: "replace" so picking a project doesn't pollute the back
+  // stack — users browser-back to leave the app, not to step through
+  // every sidebar selection. nuqs defaults to "push".
+  const [projectKey, setProjectKey] = useQueryState("project", {
+    history: "replace",
+  });
   const projects = useProjects();
   const project: Project | null =
     projects.data?.find(
@@ -42,7 +47,7 @@ export default function App() {
           </>
         ) : (
           <Welcome
-            unresolved={!!projectKey && !projects.isLoading}
+            unresolved={!!projectKey && projects.isSuccess && !project}
             keyValue={projectKey}
           />
         )}

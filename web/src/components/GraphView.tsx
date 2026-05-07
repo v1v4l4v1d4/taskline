@@ -10,6 +10,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
+  STATES,
   STATE_LABELS,
   type Project,
   type Task,
@@ -37,18 +38,21 @@ export function GraphView({ project }: Props) {
   // Layout: rough column-by-state, ordered top-to-bottom by priority.
   // Not a real DAG layout, but predictable and quick.
   const { nodes, edges } = useMemo(() => {
-    const states: TaskState[] = ["created", "design", "dev", "review", "done"];
     const colSpacing = 240;
     const rowSpacing = 110;
-    const cols: Record<TaskState, Task[]> = {
-      created: [], design: [], dev: [], review: [], done: [],
-    };
-    for (const t of tasks) cols[t.state].push(t);
-    for (const s of states) {
+    const cols = {} as Record<TaskState, Task[]>;
+    for (const s of STATES) cols[s] = [];
+    // Defensive: a task may carry a state the web doesn't know about
+    // (e.g. server is one revision ahead of the bundled web). Skip
+    // those rather than crashing on undefined.push.
+    for (const t of tasks) {
+      if (cols[t.state]) cols[t.state].push(t);
+    }
+    for (const s of STATES) {
       cols[s].sort((a, b) => b.priority - a.priority);
     }
     const nodes: Node[] = [];
-    states.forEach((s, ci) => {
+    STATES.forEach((s, ci) => {
       cols[s].forEach((t, ri) => {
         nodes.push({
           id: t.id,

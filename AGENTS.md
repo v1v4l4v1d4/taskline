@@ -6,9 +6,7 @@ Guidance for agents (and humans) working in this repository.
 
 For product overview and quick start, see `README.md`. For architecture
 internals see `ARCHITECTURE.md`; for the philosophy behind the product
-see `PRODUCT.md`. (`DESIGN.md` is reserved for the UI / visual-design
-spec convention, which is not what this repo's philosophy doc was —
-hence the rename.)
+see `PRODUCT.md`.
 
 ## Repo layout (TL;DR)
 

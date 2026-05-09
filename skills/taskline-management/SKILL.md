@@ -40,36 +40,6 @@ If the user only wants a one-off note or todo line, this is the wrong
 tool — just reply directly. taskline is for work that has structure
 (state, dependencies, multiple items, priority).
 
-## Setup (only the first time on a machine)
-
-The CLI talks to a server. Make sure both are built once per machine:
-
-```bash
-# In the taskline repo root
-go build -o bin/taskline-server ./cmd/taskline-server
-( cd cli && go build -o ../bin/taskline . )
-```
-
-Server config comes from a `.env` file in the directory you launch the
-server from (or the process environment). Defaults are sensible for
-local use:
-
-```dotenv
-# .env (next to the binary)
-TASKLINE_DB=./data/taskline.db
-TASKLINE_LISTEN=:8787
-TASKLINE_IMAGES_DIR=./data/images
-```
-
-Start the server in a long-running terminal or under launchd / systemd:
-
-```bash
-./bin/taskline-server
-```
-
-The CLI defaults to `http://127.0.0.1:8787`. Override with `--server`
-flag or `TASKLINE_SERVER` env var.
-
 ## Standard environment knobs
 
 Set these once per shell so you don't have to repeat `--project`:
@@ -306,7 +276,6 @@ one-line message. The state machine still records what happened.
 
 | Symptom                                                  | Cause / fix                                                                                              |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `server <port>: connection refused`                      | server not running — start `./bin/taskline-server` (or `systemctl --user start taskline`)                |
 | `server 404: project ... does not exist`                 | typo'd `--project`; run `taskline project list` to confirm                                               |
 | `server 400: invalid next state "..."`                   | unrecognized state name (e.g. `test` was retired) — pick one of `created/design/dev/review/done`         |
 | `server 409: dependency would create a cycle`            | the dep edge would loop back; restructure or pick a different anchor task                                |

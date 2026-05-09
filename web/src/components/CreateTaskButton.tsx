@@ -10,14 +10,37 @@ export function CreateTaskButton({ project }: { project: Project }) {
   const [priority, setPriority] = useState(0);
   const create = useCreateTask(project.id);
 
+  const submit = async () => {
+    if (!title.trim() || create.isPending) return;
+    await create.mutateAsync({ title, description, type, priority });
+    setTitle("");
+    setDescription("");
+    setPriority(0);
+    setOpen(false);
+  };
+
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      const cmd = e.metaKey || e.ctrlKey;
+      if (!open && cmd && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setOpen(true);
+        return;
+      }
+      if (!open) return;
+      if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (cmd && e.key === "Enter") {
+        e.preventDefault();
+        void submit();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, title, description, type, priority, create.isPending]);
 
   return (
     <>
@@ -40,14 +63,9 @@ export function CreateTaskButton({ project }: { project: Project }) {
             </button>
             <form
               className="p-6 space-y-3 overflow-y-auto"
-              onSubmit={async (e) => {
+              onSubmit={(e) => {
                 e.preventDefault();
-                if (!title.trim()) return;
-                await create.mutateAsync({ title, description, type, priority });
-                setTitle("");
-                setDescription("");
-                setPriority(0);
-                setOpen(false);
+                void submit();
               }}
             >
               <h3 className="font-bold pr-8">New task in {project.name}</h3>

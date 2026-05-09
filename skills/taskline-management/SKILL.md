@@ -137,10 +137,11 @@ When the user says "work the queue" / "do the next task" / "keep
 going through the backlog":
 
 1. Run `taskline task next --project <p> --format json`.
-2. If the response is `{"task": null}` (the no-runnable wrapper),
-   report there's nothing runnable and stop. Otherwise the response is
-   the task object itself — `id`, `title`, `state`, etc. as top-level
-   fields, **not** wrapped in a `{"task": ...}` envelope.
+2. The CLI emits the bare task object (`id`, `title`, `state`, … as
+   top-level fields) on success, or the literal `null` when nothing is
+   runnable. If you see `null`, report there's nothing runnable and
+   stop. Note: the underlying HTTP API (`GET /api/v1/projects/:p/tasks/next`)
+   wraps both shapes as `{"task": ...|null}`; the CLI unwraps for you.
 3. Read `title`, `description`, and any `images` (when present, the
    server returns paths the user can open locally — surface them in
    your reply if they're material to the task).
@@ -282,8 +283,8 @@ one-line message. The state machine still records what happened.
   name.
 - **`error: project required`** — neither `--project` nor
   `$TASKLINE_PROJECT` is set.
-- **`task next` returned `{"task": null}`** — nothing runnable.
-  Either the project is empty, or every non-done task is blocked. Run
+- **`task next` returned `null`** — nothing runnable. Either the
+  project is empty, or every non-done task is blocked. Run
   `taskline task list --project <p> --state created,design,dev,review`
   to see what's stuck and why.
 - **The user said "remind me to X"** — that's a one-off note, not a

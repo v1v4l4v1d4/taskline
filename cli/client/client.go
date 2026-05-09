@@ -271,5 +271,8 @@ func decodeServerError(resp *http.Response) error {
 	if json.Unmarshal(raw, &e) == nil && e.Error != "" {
 		return fmt.Errorf("taskline %d: %s", resp.StatusCode, e.Error)
 	}
-	return fmt.Errorf("taskline %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	if msg := strings.TrimSpace(string(raw)); msg != "" {
+		return fmt.Errorf("taskline %d: %s", resp.StatusCode, msg)
+	}
+	return fmt.Errorf("taskline %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 }

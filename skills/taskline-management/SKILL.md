@@ -13,26 +13,30 @@ description: |
   "queue this up", "track this", "what's runnable now" all qualify.
   Skip for one-off todo notes with no state, dependencies, or
   follow-up — just answer those directly.
-version: 0.2.0
+version: 0.3.0
 ---
 
 # taskline — task management for AI agents
 
-You drive a local **taskline** instance through the `taskline` CLI. It
-tracks projects and the tasks (features / bugs) inside them, enforces a
+The `taskline` CLI is your only interface to taskline. It tracks
+projects and the tasks (features / bugs) inside them, enforces a
 five-state lifecycle (`created → design → dev → review → done`), models
 inter-task dependencies as a DAG, and answers "what's runnable now?".
-You are the client — server installation and lifecycle are not your
-concern. Assume the server is already running on
-`http://127.0.0.1:8787`; if a command fails with connection refused,
-tell the user and stop, don't try to start anything.
 
-The CLI is built for you, not a human at a terminal:
+**Always go through the CLI.** Don't `curl` anywhere, don't try to read
+or write the database, don't shell out to internal endpoints — even if
+the CLI doesn't expose the exact verb you want. If you find a real
+gap, file a taskline task to extend the CLI; don't work around it.
+Where taskline runs and how it stores data is not your concern.
+
+The CLI is built for agents, not humans at a terminal:
 
 - JSON on stdout when not a TTY (your case). Pass `--format json` to
   force it; you almost never want `--format table`.
 - Stable exit codes (0 success, non-zero error). Diagnostics on stderr.
 - One subcommand per verb. No interactive prompts.
+- If a command fails with "connection refused" or similar, tell the
+  user — don't try to start anything yourself.
 
 ## When to use
 
@@ -66,7 +70,7 @@ focused on a single project.
 
 | Field         | Notes                                                                      |
 | ------------- | -------------------------------------------------------------------------- |
-| `id`          | UUID, server-assigned                                                      |
+| `id`          | UUID, generated for you on create                                          |
 | `project_id`  | UUID of owning project                                                     |
 | `title`       | required, short                                                            |
 | `description` | optional, longer prose                                                     |
@@ -78,22 +82,21 @@ focused on a single project.
 
 **State machine.** Any state may transition to any other named state.
 Forward jumps (`created` → `done`) and drop-backs (`review` → `dev`
-when a defect surfaces) are both legal. The server only rejects
-*unknown* state names with HTTP 400 — don't invent new ones.
+when a defect surfaces) are both legal. Unknown state names are
+rejected — don't invent new ones.
 
 **Runnable.** A task is runnable when its state is not `done` AND
-every task it depends on has state `done`. The server sorts runnable
-tasks by `priority DESC`, then `created_at ASC`. Use `taskline task
+every task it depends on has state `done`. Runnable tasks are returned
+sorted by `priority DESC`, then `created_at ASC`. Use `taskline task
 next` for the single highest-priority runnable task.
 
 **Dependency DAG.** Adding an edge that would close a cycle is
-rejected with HTTP 409. Self-deps are rejected. Re-adding an existing
-edge is a no-op.
+rejected. Self-deps are rejected. Re-adding an existing edge is a
+no-op.
 
 ## CLI cheat sheet
 
-`-h` on any subcommand prints flags. This is the full agent surface;
-prefer these over hitting the HTTP API directly.
+`-h` on any subcommand prints flags. This is the full agent surface.
 
 ### Projects
 
@@ -140,11 +143,10 @@ going through the backlog":
 2. The CLI emits the bare task object (`id`, `title`, `state`, … as
    top-level fields) on success, or the literal `null` when nothing is
    runnable. If you see `null`, report there's nothing runnable and
-   stop. Note: the underlying HTTP API (`GET /api/v1/projects/:p/tasks/next`)
-   wraps both shapes as `{"task": ...|null}`; the CLI unwraps for you.
-3. Read `title`, `description`, and any `images` (when present, the
-   server returns paths the user can open locally — surface them in
-   your reply if they're material to the task).
+   stop.
+3. Read `title`, `description`, and any `images` (the response includes
+   local paths the user can open — surface them in your reply if
+   they're material to the task).
 4. Walk the task through the stages below in order. Each stage has the
    same shape: **Trigger** (what just happened) → **Actions** (do
    these now) → **Advance** (literal CLI command to move state) →
@@ -273,14 +275,13 @@ one-line message. The state machine still records what happened.
   `--project` — the rest (`get`, `update`, `delete`, `depend`,
   `upload`) operate on the task id directly and reject the flag with
   "unknown flag".
-- **`server 400: invalid next state "..."`** — you used a name that
-  isn't in `created/design/dev/review/done`. The state `test` was
-  retired; don't reintroduce it.
-- **`server 409: dependency would create a cycle`** — the edge would
-  loop back. Restructure the graph or pick a different anchor.
-- **`server 409: project name "X" already exists`** — name collision.
-  Reuse the existing project (likely what you wanted) or pick a new
-  name.
+- **`invalid next state "..."`** — you used a name that isn't in
+  `created/design/dev/review/done`. The state `test` was retired;
+  don't reintroduce it.
+- **`dependency would create a cycle`** — the edge would loop back.
+  Restructure the graph or pick a different anchor.
+- **`project name "X" already exists`** — name collision. Reuse the
+  existing project (likely what you wanted) or pick a new name.
 - **`error: project required`** — neither `--project` nor
   `$TASKLINE_PROJECT` is set.
 - **`task next` returned `null`** — nothing runnable. Either the

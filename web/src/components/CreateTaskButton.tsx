@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Project, TaskType } from "../lib/api";
 import { useCreateTask } from "../hooks/queries";
 
@@ -10,37 +10,47 @@ export function CreateTaskButton({ project }: { project: Project }) {
   const [priority, setPriority] = useState(0);
   const create = useCreateTask(project.id);
 
-  const submit = async () => {
+  const submit = () => {
     if (!title.trim() || create.isPending) return;
-    await create.mutateAsync({ title, description, type, priority });
-    setTitle("");
-    setDescription("");
-    setPriority(0);
-    setOpen(false);
+    create.mutate(
+      { title, description, type, priority },
+      {
+        onSuccess: () => {
+          setTitle("");
+          setDescription("");
+          setPriority(0);
+          setOpen(false);
+        },
+      }
+    );
+  };
+
+  // Keep a ref to the latest keydown handler so the window listener can
+  // be bound exactly once (instead of re-attaching on every keystroke).
+  const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  handlerRef.current = (e: KeyboardEvent) => {
+    const cmd = e.metaKey || e.ctrlKey;
+    if (!open && cmd && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      setOpen(true);
+      return;
+    }
+    if (!open) return;
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (cmd && e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const cmd = e.metaKey || e.ctrlKey;
-      if (!open && cmd && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (!open) return;
-      if (e.key === "Escape") {
-        setOpen(false);
-        return;
-      }
-      if (cmd && e.key === "Enter") {
-        e.preventDefault();
-        void submit();
-      }
-    };
+    const onKey = (e: KeyboardEvent) => handlerRef.current(e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, title, description, type, priority, create.isPending]);
+  }, []);
 
   return (
     <>
@@ -65,7 +75,7 @@ export function CreateTaskButton({ project }: { project: Project }) {
               className="p-6 space-y-3 overflow-y-auto"
               onSubmit={(e) => {
                 e.preventDefault();
-                void submit();
+                submit();
               }}
             >
               <h3 className="font-bold pr-8">New task in {project.name}</h3>

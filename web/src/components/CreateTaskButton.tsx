@@ -19,13 +19,9 @@ export function CreateTaskButton({ project }: { project: Project }) {
         + New task
       </button>
       {open && (
-        <div
-          className="fixed inset-0 z-30 bg-black/30 flex items-center justify-center"
-          onClick={() => setOpen(false)}
-        >
+        <div className="fixed inset-0 z-30 bg-black/30 flex items-center justify-center">
           <form
-            className="bg-white rounded-lg shadow-xl p-6 w-[420px] space-y-3"
-            onClick={(e) => e.stopPropagation()}
+            className="relative bg-white rounded-lg shadow-xl p-6 w-[420px] space-y-3"
             onSubmit={async (e) => {
               e.preventDefault();
               if (!title.trim()) return;
@@ -36,7 +32,15 @@ export function CreateTaskButton({ project }: { project: Project }) {
               setOpen(false);
             }}
           >
-            <h3 className="font-bold">New task in {project.name}</h3>
+            <button
+              type="button"
+              aria-label="Close"
+              className="absolute top-2 right-2 text-slate-400 hover:text-slate-700 text-xl leading-none w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100"
+              onClick={() => setOpen(false)}
+            >
+              ×
+            </button>
+            <h3 className="font-bold pr-8">New task in {project.name}</h3>
             <input
               className="w-full text-sm border rounded px-2 py-1.5"
               placeholder="title"
@@ -45,7 +49,7 @@ export function CreateTaskButton({ project }: { project: Project }) {
               autoFocus
             />
             <textarea
-              className="w-full text-sm border rounded px-2 py-1.5 resize-none"
+              className="w-full text-sm border rounded px-2 py-1.5 resize-y min-h-[5rem]"
               rows={3}
               placeholder="description (optional)"
               value={description}

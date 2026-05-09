@@ -40,15 +40,17 @@ export function TaskEditor({ project, task, allTasks, onClose }: Props) {
   );
 
   return (
-    <div
-      className="fixed inset-0 z-40 bg-black/30 flex items-center justify-center"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl p-6 w-[520px] space-y-3 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between">
+    <div className="fixed inset-0 z-40 bg-black/30 flex items-center justify-center">
+      <div className="relative bg-white rounded-lg shadow-xl p-6 w-[520px] space-y-3 max-h-[90vh] overflow-y-auto">
+        <button
+          type="button"
+          aria-label="Close"
+          className="absolute top-2 right-2 text-slate-400 hover:text-slate-700 text-xl leading-none w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        <div className="flex items-start justify-between pr-8">
           <h3 className="font-bold text-base">Edit task</h3>
           <code className="text-[10px] text-slate-400">{task.id.slice(0, 8)}</code>
         </div>
@@ -58,7 +60,7 @@ export function TaskEditor({ project, task, allTasks, onClose }: Props) {
           onChange={(e) => setTitle(e.target.value)}
         />
         <textarea
-          className="w-full text-sm border rounded px-2 py-1.5 resize-none"
+          className="w-full text-sm border rounded px-2 py-1.5 resize-y min-h-[6rem]"
           rows={4}
           value={description}
           onChange={(e) => setDescription(e.target.value)}

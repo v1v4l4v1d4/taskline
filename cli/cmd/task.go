@@ -128,12 +128,11 @@ var taskNextCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if t == nil {
-			return output.Render(os.Stdout, output.Resolve(formatFlag), map[string]any{"task": nil}, func(w io.Writer) {
-				fmt.Fprintln(w, "(no runnable task)")
-			})
-		}
 		return output.Render(os.Stdout, output.Resolve(formatFlag), t, func(w io.Writer) {
+			if t == nil {
+				fmt.Fprintln(w, "(no runnable task)")
+				return
+			}
 			renderTaskTable(w, []client.Task{*t})
 		})
 	},

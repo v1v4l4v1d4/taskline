@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"taskline_server/api/model"
 	"taskline_server/internal/store"
@@ -141,15 +142,28 @@ func (s *Service) AddImage(ctx context.Context, img *model.Image) error {
 	return s.st.AddImage(ctx, img)
 }
 
-// AddLink attaches a URL to a task. url is required; label is optional.
-func (s *Service) AddLink(ctx context.Context, taskID, url, label string) (*model.Link, error) {
-	if url == "" {
+// AddLink attaches a URL to a task. rawURL is required and must use the
+// http or https scheme — the web renders these via <a href=…> and a
+// `javascript:` (or `data:`, `file:`, …) URI would otherwise be an XSS
+// vector. label is optional. Task existence is enforced by the store
+// via the task_links → tasks FK; no extra GetTask round-trip here.
+func (s *Service) AddLink(ctx context.Context, taskID, rawURL, label string) (*model.Link, error) {
+	if rawURL == "" {
 		return nil, errors.New("link url required")
 	}
-	if _, err := s.st.GetTask(ctx, taskID); err != nil {
-		return nil, fmt.Errorf("task %s: %w", taskID, err)
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid link url: %w", err)
 	}
-	link := &model.Link{TaskID: taskID, URL: url, Label: label}
+	switch u.Scheme {
+	case "http", "https":
+	default:
+		return nil, fmt.Errorf("link url must use http or https scheme (got %q)", u.Scheme)
+	}
+	if u.Host == "" {
+		return nil, errors.New("link url must include a host")
+	}
+	link := &model.Link{TaskID: taskID, URL: rawURL, Label: label}
 	if err := s.st.AddLink(ctx, link); err != nil {
 		return nil, err
 	}

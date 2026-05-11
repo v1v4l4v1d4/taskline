@@ -348,9 +348,16 @@ func TestTaskLinkLifecycleAtAPI(t *testing.T) {
 		map[string]any{"label": "no url"}, nil)
 	require.Equal(t, http.StatusBadRequest, st)
 
-	// Link on a missing task → 404.
+	// javascript: URI must be rejected at the API boundary — it would
+	// otherwise round-trip through the web's <a href=…> as a clickable
+	// XSS sink.
+	st = jsonReq(t, "POST", base+"/api/v1/tasks/"+tk.ID+"/links",
+		map[string]any{"url": "javascript:alert(1)"}, nil)
+	require.Equal(t, http.StatusBadRequest, st)
+
+	// Link on a missing task → 404. (FK in the store, not a pre-check.)
 	st = jsonReq(t, "POST", base+"/api/v1/tasks/no-such-task/links",
-		map[string]any{"url": "https://x"}, nil)
+		map[string]any{"url": "https://x.test"}, nil)
 	require.Equal(t, http.StatusNotFound, st)
 
 	// GET task surfaces the link inline.

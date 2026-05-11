@@ -229,6 +229,81 @@ func TestMigrationsRunOnceAcrossReopens(t *testing.T) {
 	require.Equal(t, v1, v2, "re-opening must not change user_version")
 }
 
+// TestMigrationUpgradesCreatedRowsToStart catches the failure mode
+// where the 0003 migration would explode on any DB that actually has
+// rows in state='created' — the old CHECK constraint forbids 'start',
+// so a pre-UPDATE rename would fail. We seed the legacy schema with
+// real 'created' rows (and a task_deps edge) before opening the store
+// to drive the migration through.
+func TestMigrationUpgradesCreatedRowsToStart(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "taskline.db")
+
+	// Seed the legacy schema directly — bypass the Store so 0003 hasn't
+	// run yet. user_version stays at 0; opening Store later will run all
+	// migrations in order.
+	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	_, err = raw.ExecContext(ctx, `
+		CREATE TABLE projects(
+		    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+		    description TEXT NOT NULL DEFAULT '',
+		    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+		CREATE TABLE tasks(
+		    id TEXT PRIMARY KEY,
+		    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+		    title TEXT NOT NULL,
+		    description TEXT NOT NULL DEFAULT '',
+		    type TEXT NOT NULL CHECK (type IN ('feature','bug')),
+		    state TEXT NOT NULL CHECK (state IN ('created','design','dev','review','done')),
+		    priority INTEGER NOT NULL DEFAULT 0,
+		    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+		CREATE TABLE task_deps(
+		    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    created_at INTEGER NOT NULL,
+		    PRIMARY KEY(task_id, depends_on_task_id),
+		    CHECK(task_id <> depends_on_task_id));
+		INSERT INTO projects(id,name,description,created_at,updated_at)
+		    VALUES ('p1','demo','',0,0);
+		INSERT INTO tasks(id,project_id,title,type,state,priority,created_at,updated_at)
+		    VALUES ('a','p1','first','feature','created',1,0,0),
+		           ('b','p1','second','feature','dev',2,0,0);
+		INSERT INTO task_deps(task_id, depends_on_task_id, created_at)
+		    VALUES ('b','a',0);
+	`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	// Open via Store — this runs the migrations in order, ending at 0003.
+	st, err := store.New(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	v, err := readUserVersion(path)
+	require.NoError(t, err)
+	require.Equal(t, 3, v, "migration should have advanced user_version to 3")
+
+	// The legacy 'created' row was renamed to 'start' during the swap.
+	ta, err := st.GetTask(ctx, "a")
+	require.NoError(t, err)
+	require.Equal(t, model.StateStart, ta.State)
+
+	// The 'dev' row is untouched.
+	tb, err := st.GetTask(ctx, "b")
+	require.NoError(t, err)
+	require.Equal(t, model.StateDev, tb.State)
+
+	// task_deps FK + cascade-delete still work after the table swap.
+	require.NoError(t, st.DeleteTask(ctx, "a"))
+	rs, err := st.ListTasks(ctx, store.TaskFilter{ProjectID: "p1"})
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	require.Equal(t, "b", rs[0].ID)
+	require.Empty(t, rs[0].DependsOn, "task_deps row should have cascaded")
+}
+
 // readUserVersion opens a side-channel SQL handle to inspect the
 // PRAGMA without going through the Store API.
 func readUserVersion(path string) (int, error) {

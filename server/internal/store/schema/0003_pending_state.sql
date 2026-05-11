@@ -2,11 +2,16 @@
 -- lot and rename the entry state 'created' → 'start'. SQLite has no
 -- ALTER TABLE for changing a CHECK constraint, so the supported recipe
 -- is CREATE NEW / COPY / DROP OLD / RENAME. We rely on
--- PRAGMA defer_foreign_keys = ON to keep task_deps FKs valid across the
--- table swap within this transaction; the migration runner provides
--- the surrounding BEGIN/COMMIT.
-
-UPDATE tasks SET state = 'start' WHERE state = 'created';
+-- PRAGMA defer_foreign_keys = ON to let DROP TABLE tasks coexist briefly
+-- with task_deps' FK references inside this transaction — the FK
+-- definitions in task_deps / task_images are not destroyed, they re-bind
+-- to the renamed `tasks` table at commit time. Verified with
+-- `PRAGMA foreign_key_check` + cascade-delete after the swap.
+--
+-- The rename created → start happens inside the INSERT (CASE WHEN) and
+-- NOT via a prior UPDATE on `tasks`: the old CHECK constraint forbids
+-- the value 'start', so an UPDATE would fail on any database that
+-- actually has rows in state='created'.
 
 PRAGMA defer_foreign_keys = ON;
 
@@ -23,7 +28,10 @@ CREATE TABLE tasks_new (
 );
 
 INSERT INTO tasks_new (id, project_id, title, description, type, state, priority, created_at, updated_at)
-    SELECT id, project_id, title, description, type, state, priority, created_at, updated_at FROM tasks;
+    SELECT id, project_id, title, description, type,
+           CASE WHEN state = 'created' THEN 'start' ELSE state END,
+           priority, created_at, updated_at
+      FROM tasks;
 
 DROP TABLE tasks;
 ALTER TABLE tasks_new RENAME TO tasks;

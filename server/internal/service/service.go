@@ -140,3 +140,23 @@ func (s *Service) AddDependency(ctx context.Context, taskID, dependsOnID string)
 func (s *Service) AddImage(ctx context.Context, img *model.Image) error {
 	return s.st.AddImage(ctx, img)
 }
+
+// AddLink attaches a URL to a task. url is required; label is optional.
+func (s *Service) AddLink(ctx context.Context, taskID, url, label string) (*model.Link, error) {
+	if url == "" {
+		return nil, errors.New("link url required")
+	}
+	if _, err := s.st.GetTask(ctx, taskID); err != nil {
+		return nil, fmt.Errorf("task %s: %w", taskID, err)
+	}
+	link := &model.Link{TaskID: taskID, URL: url, Label: label}
+	if err := s.st.AddLink(ctx, link); err != nil {
+		return nil, err
+	}
+	return link, nil
+}
+
+// DeleteLink removes a link by its id.
+func (s *Service) DeleteLink(ctx context.Context, id string) error {
+	return s.st.DeleteLink(ctx, id)
+}

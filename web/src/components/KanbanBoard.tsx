@@ -23,6 +23,11 @@ interface Props {
   project: Project;
 }
 
+// Module-level stable empty reference so `tasks` keeps the same identity
+// across renders while the query is loading. Otherwise `[] !== []` would
+// invalidate every dependent useMemo on each render.
+const NO_TASKS: Task[] = [];
+
 export function KanbanBoard({ project }: Props) {
   const tasksQ = useTasks(project.id);
   const updateTask = useUpdateTask(project.id);
@@ -33,7 +38,7 @@ export function KanbanBoard({ project }: Props) {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
-  const tasks = tasksQ.data ?? [];
+  const tasks = tasksQ.data ?? NO_TASKS;
 
   // doneIds drives the "blocked" badge — every dep must be in done state.
   const doneIds = useMemo(

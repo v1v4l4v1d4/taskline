@@ -14,23 +14,19 @@ const WEEK = 7 * DAY;
 const MONTH = 30 * DAY;
 const YEAR = 365 * DAY;
 
+type Unit = "min" | "hour" | "day" | "week" | "month" | "year";
+
+function pick(value: number, unit: Unit): string {
+  const v = Math.floor(value);
+  const plural = v === 1 ? unit : `${unit}s`;
+  return `${v} ${plural} ago`;
+}
+
 export function formatRelativeTime(timestampMs: number, now: number = Date.now()): string {
   const diff = now - timestampMs;
-
   // Future timestamps shouldn't happen in normal flow, but if a client
-  // clock is skewed forward we don't want to render "-3 mins ago".
-  if (diff < 0) return "just now";
+  // clock is skewed forward we don't want to render a negative time.
   if (diff < MINUTE) return "just now";
-
-  const pick = (
-    value: number,
-    unit: "min" | "hour" | "day" | "week" | "month" | "year"
-  ): string => {
-    const v = Math.floor(value);
-    const plural = v === 1 ? unit : `${unit}s`;
-    return `${v} ${plural} ago`;
-  };
-
   if (diff < HOUR) return pick(diff / MINUTE, "min");
   if (diff < DAY) return pick(diff / HOUR, "hour");
   if (diff < WEEK) return pick(diff / DAY, "day");

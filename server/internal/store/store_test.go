@@ -53,37 +53,52 @@ func TestTaskCreateAndState(t *testing.T) {
 	p, err := st.CreateProject(ctx, "p1", "")
 	require.NoError(t, err)
 
-	tk, err := st.CreateTask(ctx, p.ID, "first", "desc", model.TaskTypeFeature, 1)
+	tk, err := st.CreateTask(ctx, p.ID, "first", "desc", model.TaskTypeFeature, 1, model.StateStart)
 	require.NoError(t, err)
-	require.Equal(t, model.StateCreated, tk.State)
+	require.Equal(t, model.StateStart, tk.State)
 	require.Equal(t, model.TaskTypeFeature, tk.Type)
 
+	// Tasks created in pending preserve that state.
+	tkPending, err := st.CreateTask(ctx, p.ID, "later", "", model.TaskTypeFeature, 0, model.StatePending)
+	require.NoError(t, err)
+	require.Equal(t, model.StatePending, tkPending.State)
+
 	// Bad project id → not found.
-	_, err = st.CreateTask(ctx, "no-such-project", "x", "", model.TaskTypeFeature, 0)
+	_, err = st.CreateTask(ctx, "no-such-project", "x", "", model.TaskTypeFeature, 0, model.StateStart)
 	require.ErrorIs(t, err, store.ErrNotFound)
 
 	// Bad type rejected.
-	_, err = st.CreateTask(ctx, p.ID, "x", "", model.TaskType("bogus"), 0)
+	_, err = st.CreateTask(ctx, p.ID, "x", "", model.TaskType("bogus"), 0, model.StateStart)
+	require.Error(t, err)
+
+	// Bad initial state rejected.
+	_, err = st.CreateTask(ctx, p.ID, "x", "", model.TaskTypeFeature, 0, model.TaskState("bogus"))
 	require.Error(t, err)
 }
 
 func TestStateTransitionRules(t *testing.T) {
 	// Forward jumps are allowed.
-	require.NoError(t, model.StateCreated.CanTransitionTo(model.StateDesign))
-	require.NoError(t, model.StateCreated.CanTransitionTo(model.StateDone))
+	require.NoError(t, model.StateStart.CanTransitionTo(model.StateDesign))
+	require.NoError(t, model.StateStart.CanTransitionTo(model.StateDone))
 	// Backward moves are allowed too — the workflow no longer enforces direction.
 	require.NoError(t, model.StateReview.CanTransitionTo(model.StateDev))
-	require.NoError(t, model.StateDone.CanTransitionTo(model.StateCreated))
+	require.NoError(t, model.StateDone.CanTransitionTo(model.StateStart))
+	// Pending may be reached from any state, including done.
+	require.NoError(t, model.StateDone.CanTransitionTo(model.StatePending))
+	require.NoError(t, model.StateDev.CanTransitionTo(model.StatePending))
+	require.NoError(t, model.StatePending.CanTransitionTo(model.StateStart))
 	// Unknown state names still fail validation.
 	require.Error(t, model.TaskState("bogus").CanTransitionTo(model.StateDev))
 	require.Error(t, model.StateDev.CanTransitionTo(model.TaskState("test")))
+	// 'created' was renamed to 'start' — passing it should now be rejected.
+	require.Error(t, model.StateDev.CanTransitionTo(model.TaskState("created")))
 }
 
 func TestUpdateTaskAndDelete(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	p, _ := st.CreateProject(ctx, "p", "")
-	tk, _ := st.CreateTask(ctx, p.ID, "t", "", model.TaskTypeFeature, 0)
+	tk, _ := st.CreateTask(ctx, p.ID, "t", "", model.TaskTypeFeature, 0, model.StateStart)
 
 	newTitle := "renamed"
 	newPrio := 7
@@ -100,9 +115,9 @@ func TestDependencyCycleProtection(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	p, _ := st.CreateProject(ctx, "p", "")
-	a, _ := st.CreateTask(ctx, p.ID, "a", "", model.TaskTypeFeature, 0)
-	b, _ := st.CreateTask(ctx, p.ID, "b", "", model.TaskTypeFeature, 0)
-	c, _ := st.CreateTask(ctx, p.ID, "c", "", model.TaskTypeFeature, 0)
+	a, _ := st.CreateTask(ctx, p.ID, "a", "", model.TaskTypeFeature, 0, model.StateStart)
+	b, _ := st.CreateTask(ctx, p.ID, "b", "", model.TaskTypeFeature, 0, model.StateStart)
+	c, _ := st.CreateTask(ctx, p.ID, "c", "", model.TaskTypeFeature, 0, model.StateStart)
 
 	require.NoError(t, st.AddDependency(ctx, b.ID, a.ID))
 	require.NoError(t, st.AddDependency(ctx, c.ID, b.ID))
@@ -123,9 +138,9 @@ func TestRunnableTasksRespectsDependencies(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	p, _ := st.CreateProject(ctx, "p", "")
-	a, _ := st.CreateTask(ctx, p.ID, "a", "", model.TaskTypeFeature, 1)
-	b, _ := st.CreateTask(ctx, p.ID, "b", "", model.TaskTypeFeature, 5)
-	c, _ := st.CreateTask(ctx, p.ID, "c", "", model.TaskTypeFeature, 9)
+	a, _ := st.CreateTask(ctx, p.ID, "a", "", model.TaskTypeFeature, 1, model.StateStart)
+	b, _ := st.CreateTask(ctx, p.ID, "b", "", model.TaskTypeFeature, 5, model.StateStart)
+	c, _ := st.CreateTask(ctx, p.ID, "c", "", model.TaskTypeFeature, 9, model.StateStart)
 
 	require.NoError(t, st.AddDependency(ctx, b.ID, a.ID))
 	require.NoError(t, st.AddDependency(ctx, c.ID, b.ID))
@@ -156,9 +171,9 @@ func TestRunnableTasksOrderedByPriority(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	p, _ := st.CreateProject(ctx, "p", "")
-	low, _ := st.CreateTask(ctx, p.ID, "low", "", model.TaskTypeFeature, 1)
-	high, _ := st.CreateTask(ctx, p.ID, "high", "", model.TaskTypeFeature, 9)
-	mid, _ := st.CreateTask(ctx, p.ID, "mid", "", model.TaskTypeFeature, 5)
+	low, _ := st.CreateTask(ctx, p.ID, "low", "", model.TaskTypeFeature, 1, model.StateStart)
+	high, _ := st.CreateTask(ctx, p.ID, "high", "", model.TaskTypeFeature, 9, model.StateStart)
+	mid, _ := st.CreateTask(ctx, p.ID, "mid", "", model.TaskTypeFeature, 5, model.StateStart)
 
 	rs, err := st.ListRunnableTasks(ctx, p.ID)
 	require.NoError(t, err)
@@ -172,8 +187,8 @@ func TestListTasksFilteredByState(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	p, _ := st.CreateProject(ctx, "p", "")
-	_, _ = st.CreateTask(ctx, p.ID, "a", "", model.TaskTypeFeature, 0)
-	t2, _ := st.CreateTask(ctx, p.ID, "b", "", model.TaskTypeFeature, 0)
+	_, _ = st.CreateTask(ctx, p.ID, "a", "", model.TaskTypeFeature, 0, model.StateStart)
+	t2, _ := st.CreateTask(ctx, p.ID, "b", "", model.TaskTypeFeature, 0, model.StateStart)
 	stDev := model.StateDev
 	_, _ = st.UpdateTask(ctx, t2.ID, store.TaskUpdate{State: &stDev})
 
@@ -201,7 +216,7 @@ func TestMigrationsRunOnceAcrossReopens(t *testing.T) {
 
 	v1, err := readUserVersion(path)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, v1, 2, "first open should advance to >=2")
+	require.GreaterOrEqual(t, v1, 3, "first open should advance to >=3")
 
 	require.NoError(t, st1.Close())
 
@@ -212,6 +227,81 @@ func TestMigrationsRunOnceAcrossReopens(t *testing.T) {
 	v2, err := readUserVersion(path)
 	require.NoError(t, err)
 	require.Equal(t, v1, v2, "re-opening must not change user_version")
+}
+
+// TestMigrationUpgradesCreatedRowsToStart catches the failure mode
+// where the 0003 migration would explode on any DB that actually has
+// rows in state='created' — the old CHECK constraint forbids 'start',
+// so a pre-UPDATE rename would fail. We seed the legacy schema with
+// real 'created' rows (and a task_deps edge) before opening the store
+// to drive the migration through.
+func TestMigrationUpgradesCreatedRowsToStart(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "taskline.db")
+
+	// Seed the legacy schema directly — bypass the Store so 0003 hasn't
+	// run yet. user_version stays at 0; opening Store later will run all
+	// migrations in order.
+	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	_, err = raw.ExecContext(ctx, `
+		CREATE TABLE projects(
+		    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+		    description TEXT NOT NULL DEFAULT '',
+		    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+		CREATE TABLE tasks(
+		    id TEXT PRIMARY KEY,
+		    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+		    title TEXT NOT NULL,
+		    description TEXT NOT NULL DEFAULT '',
+		    type TEXT NOT NULL CHECK (type IN ('feature','bug')),
+		    state TEXT NOT NULL CHECK (state IN ('created','design','dev','review','done')),
+		    priority INTEGER NOT NULL DEFAULT 0,
+		    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+		CREATE TABLE task_deps(
+		    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    created_at INTEGER NOT NULL,
+		    PRIMARY KEY(task_id, depends_on_task_id),
+		    CHECK(task_id <> depends_on_task_id));
+		INSERT INTO projects(id,name,description,created_at,updated_at)
+		    VALUES ('p1','demo','',0,0);
+		INSERT INTO tasks(id,project_id,title,type,state,priority,created_at,updated_at)
+		    VALUES ('a','p1','first','feature','created',1,0,0),
+		           ('b','p1','second','feature','dev',2,0,0);
+		INSERT INTO task_deps(task_id, depends_on_task_id, created_at)
+		    VALUES ('b','a',0);
+	`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	// Open via Store — this runs the migrations in order, ending at 0003.
+	st, err := store.New(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	v, err := readUserVersion(path)
+	require.NoError(t, err)
+	require.Equal(t, 3, v, "migration should have advanced user_version to 3")
+
+	// The legacy 'created' row was renamed to 'start' during the swap.
+	ta, err := st.GetTask(ctx, "a")
+	require.NoError(t, err)
+	require.Equal(t, model.StateStart, ta.State)
+
+	// The 'dev' row is untouched.
+	tb, err := st.GetTask(ctx, "b")
+	require.NoError(t, err)
+	require.Equal(t, model.StateDev, tb.State)
+
+	// task_deps FK + cascade-delete still work after the table swap.
+	require.NoError(t, st.DeleteTask(ctx, "a"))
+	rs, err := st.ListTasks(ctx, store.TaskFilter{ProjectID: "p1"})
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	require.Equal(t, "b", rs[0].ID)
+	require.Empty(t, rs[0].DependsOn, "task_deps row should have cascaded")
 }
 
 // readUserVersion opens a side-channel SQL handle to inspect the

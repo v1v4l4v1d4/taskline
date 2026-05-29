@@ -458,7 +458,10 @@ func (s *Store) DeleteDependency(ctx context.Context, taskID, dependsOnID string
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
 	if n == 0 {
 		return ErrNotFound
 	}

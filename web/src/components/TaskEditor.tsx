@@ -443,7 +443,6 @@ function DependsSection({
   };
 
   const removeDependency = async (dependsOn: string) => {
-    if (del.isPending) return;
     try {
       await del.mutateAsync({ taskId: task.id, dependsOn });
       setDependencyIds((current) => current.filter((id) => id !== dependsOn));

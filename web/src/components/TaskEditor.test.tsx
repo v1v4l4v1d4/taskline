@@ -279,6 +279,46 @@ describe("TaskEditor links and dependencies", () => {
     );
   });
 
+  it("allows deleting multiple dependencies while previous deletes are pending", async () => {
+    const user = userEvent.setup();
+    const secondDep: Task = {
+      ...task,
+      id: "task-4",
+      title: "Second dependency",
+      state: "start",
+    };
+    const resolvers: Array<(response: Response) => void> = [];
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderEditor(
+      vi.fn(),
+      { ...task, depends_on: [activeDep.id, secondDep.id] },
+      [{ ...task, depends_on: [activeDep.id, secondDep.id] }, activeDep, secondDep]
+    );
+
+    await user.click(screen.getByRole("button", { name: /remove dependency active dependency/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: /remove dependency second dependency/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    for (const resolve of resolvers) {
+      resolve(
+        new Response(JSON.stringify({ deleted: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+    await waitFor(() => expect(screen.queryByText("Active dependency")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Second dependency")).toBeNull());
+  });
+
   it("updates links immediately after adding and removing", async () => {
     const user = userEvent.setup();
     const existing: TaskLink = {

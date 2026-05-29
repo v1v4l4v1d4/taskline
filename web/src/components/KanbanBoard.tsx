@@ -16,7 +16,7 @@ import {
   type Task,
   type TaskState,
 } from "../lib/api";
-import { useTasks, useUpdateTask } from "../hooks/queries";
+import { useDeleteTask, useTasks, useUpdateTask } from "../hooks/queries";
 import { TaskCard } from "./TaskCard";
 import { TaskEditor } from "./TaskEditor";
 import { CreateTaskButton } from "./CreateTaskButton";
@@ -33,6 +33,7 @@ const NO_TASKS: Task[] = [];
 export function KanbanBoard({ project }: Props) {
   const tasksQ = useTasks(project.id);
   const updateTask = useUpdateTask(project.id);
+  const deleteTask = useDeleteTask(project.id);
   const [editing, setEditing] = useState<Task | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Track which task is currently being dragged so we can render it in a
@@ -111,7 +112,7 @@ export function KanbanBoard({ project }: Props) {
             <p className="text-xs text-slate-500">{project.description}</p>
           )}
         </div>
-        <CreateTaskButton project={project} />
+        <CreateTaskButton project={project} allTasks={tasks} />
       </header>
       {error && (
         <div className="bg-red-50 border-b border-red-200 px-6 py-2 text-sm text-red-800">
@@ -134,6 +135,14 @@ export function KanbanBoard({ project }: Props) {
                     task={t}
                     isBlocked={isBlocked(t)}
                     onClick={() => setEditing(t)}
+                    onDelete={() => {
+                      deleteTask.mutate(t.id, {
+                        onError: (err) => {
+                          setError((err as Error).message);
+                          setTimeout(() => setError(null), 5000);
+                        },
+                      });
+                    }}
                   />
                 ))}
               </Column>

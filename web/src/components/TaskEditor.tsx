@@ -13,9 +13,9 @@ import {
 import {
   useAddDependency,
   useAddLink,
+  useCreateTask,
   useDeleteDependency,
   useDeleteLink,
-  useDeleteTask,
   useUpdateTask,
   useUploadImage,
 } from "../hooks/queries";
@@ -28,23 +28,51 @@ const MarkdownDescriptionDialog = lazy(() =>
 
 interface Props {
   project: Project;
-  task: Task;
   allTasks: Task[];
   onClose: () => void;
+  task?: Task;
+  mode?: "create" | "edit";
 }
 
-export function TaskEditor({ project, task, allTasks, onClose }: Props) {
-  const [title, setTitle] = useState(task.title);
-  const [description, setDescription] = useState(task.description);
-  const [type, setType] = useState<TaskType>(task.type);
-  const [state, setState] = useState<TaskState>(task.state);
-  const [priority, setPriority] = useState(task.priority);
+function createEmptyTask(projectId: string): Task {
+  return {
+    id: "",
+    project_id: projectId,
+    title: "",
+    description: "",
+    type: "feature",
+    state: "start",
+    priority: 0,
+    created_at: 0,
+    updated_at: 0,
+    depends_on: [],
+    links: [],
+    images: [],
+  };
+}
+
+export function TaskEditor({
+  project,
+  task,
+  allTasks,
+  onClose,
+  mode = task ? "edit" : "create",
+}: Props) {
+  const isCreate = mode === "create";
+  const currentTask = task ?? createEmptyTask(project.id);
+  const [title, setTitle] = useState(currentTask.title);
+  const [description, setDescription] = useState(currentTask.description);
+  const [type, setType] = useState<TaskType>(currentTask.type);
+  const [state, setState] = useState<TaskState>(currentTask.state);
+  const [priority, setPriority] = useState(currentTask.priority);
   const [error, setError] = useState<string | null>(null);
   const [markdownOpen, setMarkdownOpen] = useState(false);
   const markdownButtonRef = useRef<HTMLButtonElement>(null);
 
+  const create = useCreateTask(project.id);
   const update = useUpdateTask(project.id);
-  const del = useDeleteTask(project.id);
+  const isSaving = create.isPending || update.isPending;
+  const createdTaskRef = useRef<Task | null>(null);
 
   const closeMarkdownEditor = () => {
     setMarkdownOpen(false);
@@ -64,6 +92,40 @@ export function TaskEditor({ project, task, allTasks, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [markdownOpen, onClose]);
 
+  const save = async () => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle || isSaving) {
+      if (!trimmedTitle) setError("Title is required.");
+      return;
+    }
+    try {
+      if (isCreate) {
+        let activeTask = createdTaskRef.current;
+        if (!activeTask) {
+          activeTask = await create.mutateAsync({
+            title: trimmedTitle,
+            description,
+            type,
+            priority,
+            auto_start: state !== "pending",
+          });
+          createdTaskRef.current = activeTask;
+        }
+        if (activeTask.state !== state) {
+          await update.mutateAsync({ id: activeTask.id, patch: { state } });
+        }
+      } else {
+        await update.mutateAsync({
+          id: currentTask.id,
+          patch: { title: trimmedTitle, description, type, state, priority },
+        });
+      }
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-40 bg-black/30 flex items-center justify-center">
       <div className="relative bg-white rounded-lg shadow-xl w-[520px] max-h-[90vh] flex flex-col">
@@ -76,129 +138,128 @@ export function TaskEditor({ project, task, allTasks, onClose }: Props) {
           ×
         </button>
         <div className="p-6 space-y-3 overflow-y-auto">
-        <div className="flex items-start justify-between pr-8">
-          <h3 className="font-bold text-base">Edit task</h3>
-          <code className="text-[10px] text-slate-400">{task.id.slice(0, 8)}</code>
-        </div>
-        <input
-          className="w-full text-sm border rounded px-2 py-1.5 font-medium"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <label htmlFor="task-description" className="text-xs text-slate-500">
-              Description
-            </label>
-            <button
-              ref={markdownButtonRef}
-              type="button"
-              aria-label="Open markdown editor"
-              className="h-7 w-7 rounded border border-slate-200 bg-white/75 text-slate-500 shadow-sm backdrop-blur hover:bg-white hover:text-slate-900 flex items-center justify-center"
-              onClick={() => setMarkdownOpen(true)}
-            >
-              <FileCode2 size={15} aria-hidden="true" />
-            </button>
+          <div className="flex items-start justify-between pr-8">
+            <h3 className="font-bold text-base">
+              {isCreate ? `New task in ${project.name}` : "Edit task"}
+            </h3>
+            {!isCreate && (
+              <code className="text-[10px] text-slate-400">
+                {currentTask.id.slice(0, 8)}
+              </code>
+            )}
           </div>
-          <textarea
-            id="task-description"
-            aria-label="Description"
-            className="w-full text-sm border rounded px-2 py-1.5 resize-y min-h-[6rem]"
-            rows={4}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+          <input
+            aria-label="Title"
+            className="w-full text-sm border rounded px-2 py-1.5 font-medium"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus={isCreate}
           />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          <label className="text-xs space-y-1">
-            <span className="text-slate-500">Type</span>
-            <select
-              className="w-full border rounded px-2 py-1"
-              value={type}
-              onChange={(e) => setType(e.target.value as TaskType)}
-            >
-              <option value="feature">feature</option>
-              <option value="bug">bug</option>
-            </select>
-          </label>
-          <label className="text-xs space-y-1">
-            <span className="text-slate-500">State</span>
-            <select
-              className="w-full border rounded px-2 py-1"
-              value={state}
-              onChange={(e) => {
-                setState(e.target.value as TaskState);
-                setError(null);
-              }}
-            >
-              {STATES.map((s) => (
-                <option key={s} value={s}>
-                  {STATE_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs space-y-1">
-            <span className="text-slate-500">Priority</span>
-            <input
-              type="number"
-              className="w-full border rounded px-2 py-1 tabular-nums"
-              value={priority}
-              onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label htmlFor="task-description" className="text-xs text-slate-500">
+                Description
+              </label>
+              <button
+                ref={markdownButtonRef}
+                type="button"
+                aria-label="Open markdown editor"
+                className="h-7 w-7 rounded border border-slate-200 bg-white/75 text-slate-500 shadow-sm backdrop-blur hover:bg-white hover:text-slate-900 flex items-center justify-center"
+                onClick={() => setMarkdownOpen(true)}
+              >
+                <FileCode2 size={15} aria-hidden="true" />
+              </button>
+            </div>
+            <textarea
+              id="task-description"
+              aria-label="Description"
+              className="w-full text-sm border rounded px-2 py-1.5 resize-y min-h-[6rem]"
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
-          </label>
-        </div>
-
-        <ImageSection project={project} task={task} />
-
-        <LinkSection project={project} task={task} />
-
-        <DependsSection project={project} task={task} allTasks={allTasks} />
-
-        {error && <p className="text-xs text-red-600">{error}</p>}
-
-        <div className="flex justify-between pt-3 border-t">
-          <button
-            className="text-sm px-3 py-1.5 rounded text-red-600 hover:bg-red-50"
-            onClick={async () => {
-              if (!confirm(`Delete task "${task.title}"? This cascades to dependencies and images.`)) return;
-              try {
-                await del.mutateAsync(task.id);
-                onClose();
-              } catch (err) {
-                setError((err as Error).message);
-              }
-            }}
-          >
-            Delete
-          </button>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="text-sm px-3 py-1.5 rounded border"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button
-              className="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-              disabled={update.isPending}
-              onClick={async () => {
-                try {
-                  await update.mutateAsync({
-                    id: task.id,
-                    patch: { title, description, type, state, priority },
-                  });
-                  onClose();
-                } catch (err) {
-                  setError((err as Error).message);
-                }
-              }}
-            >
-              {update.isPending ? "Saving…" : "Save"}
-            </button>
           </div>
-        </div>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs space-y-1">
+              <span className="text-slate-500">Type</span>
+              <select
+                aria-label="Type"
+                className="w-full border rounded px-2 py-1"
+                value={type}
+                onChange={(e) => setType(e.target.value as TaskType)}
+              >
+                <option value="feature">feature</option>
+                <option value="bug">bug</option>
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="text-slate-500">State</span>
+              <select
+                aria-label="State"
+                className="w-full border rounded px-2 py-1"
+                value={state}
+                onChange={(e) => {
+                  setState(e.target.value as TaskState);
+                  setError(null);
+                }}
+              >
+                {STATES.map((s) => (
+                  <option key={s} value={s}>
+                    {STATE_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="text-slate-500">Priority</span>
+              <input
+                aria-label="Priority"
+                type="number"
+                className="w-full border rounded px-2 py-1 tabular-nums"
+                value={priority}
+                onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
+              />
+            </label>
+          </div>
+
+          <ImageSection project={project} task={currentTask} disabled={isCreate} />
+
+          <LinkSection project={project} task={currentTask} disabled={isCreate} />
+
+          <DependsSection
+            project={project}
+            task={currentTask}
+            allTasks={allTasks}
+            disabled={isCreate}
+          />
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex justify-end pt-3 border-t">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="text-sm px-3 py-1.5 rounded border"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                disabled={isSaving}
+                onClick={save}
+              >
+                {isSaving
+                  ? isCreate
+                    ? "Creating…"
+                    : "Saving…"
+                  : isCreate
+                    ? "Create"
+                    : "Save"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       {markdownOpen && (
@@ -220,7 +281,15 @@ export function TaskEditor({ project, task, allTasks, onClose }: Props) {
   );
 }
 
-function ImageSection({ project, task }: { project: Project; task: Task }) {
+function ImageSection({
+  project,
+  task,
+  disabled = false,
+}: {
+  project: Project;
+  task: Task;
+  disabled?: boolean;
+}) {
   const [images, setImages] = useState<TaskImage[]>(task.images ?? []);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -232,7 +301,7 @@ function ImageSection({ project, task }: { project: Project; task: Task }) {
 
   const onFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
-    if (!file || upload.isPending) return;
+    if (!file || upload.isPending || disabled) return;
     if (!file.type.startsWith("image/")) {
       setError("Selected file is not an image.");
       if (inputRef.current) inputRef.current.value = "";
@@ -258,7 +327,7 @@ function ImageSection({ project, task }: { project: Project; task: Task }) {
         <label
           className={
             "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 " +
-            (upload.isPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer")
+            (upload.isPending || disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer")
           }
         >
           <ImagePlus size={14} aria-hidden="true" />
@@ -269,7 +338,7 @@ function ImageSection({ project, task }: { project: Project; task: Task }) {
             className="sr-only"
             type="file"
             accept="image/*"
-            disabled={upload.isPending}
+            disabled={upload.isPending || disabled}
             onChange={onFileChange}
           />
         </label>
@@ -313,7 +382,15 @@ function formatNumber(value: number): string {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
 }
 
-function LinkSection({ project, task }: { project: Project; task: Task }) {
+function LinkSection({
+  project,
+  task,
+  disabled = false,
+}: {
+  project: Project;
+  task: Task;
+  disabled?: boolean;
+}) {
   const [links, setLinks] = useState<TaskLink[]>(task.links ?? []);
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
@@ -326,7 +403,7 @@ function LinkSection({ project, task }: { project: Project; task: Task }) {
   }, [task.id, task.links]);
 
   const submit = async () => {
-    if (!url.trim() || add.isPending) return;
+    if (!url.trim() || add.isPending || disabled) return;
     try {
       const link = await add.mutateAsync({ taskId: task.id, url: url.trim(), label: label.trim() });
       setLinks((current) =>
@@ -381,17 +458,19 @@ function LinkSection({ project, task }: { project: Project; task: Task }) {
           className="flex-1 min-w-0 text-xs border rounded px-2 py-1"
           placeholder="https://…"
           value={url}
+          disabled={disabled}
           onChange={(e) => setUrl(e.target.value)}
         />
         <input
           className="w-32 text-xs border rounded px-2 py-1"
           placeholder="label (optional)"
           value={label}
+          disabled={disabled}
           onChange={(e) => setLabel(e.target.value)}
         />
         <button
           className="text-xs px-3 py-1 rounded bg-slate-700 text-white disabled:opacity-50"
-          disabled={!url.trim() || add.isPending}
+          disabled={!url.trim() || add.isPending || disabled}
           onClick={submit}
         >
           {add.isPending ? "Adding…" : "Add"}
@@ -406,10 +485,12 @@ function DependsSection({
   project,
   task,
   allTasks,
+  disabled = false,
 }: {
   project: Project;
   task: Task;
   allTasks: Task[];
+  disabled?: boolean;
 }) {
   const [dependencyIds, setDependencyIds] = useState<string[]>(task.depends_on ?? []);
   const [candidate, setCandidate] = useState("");
@@ -422,12 +503,12 @@ function DependsSection({
   }, [task.id, task.depends_on]);
 
   const byId = new Map(allTasks.map((t) => [t.id, t]));
-  const candidates = allTasks.filter(
+  const candidates = disabled ? [] : allTasks.filter(
     (t) => t.id !== task.id && t.state !== "done" && !dependencyIds.includes(t.id)
   );
 
   const addDependency = async (dependsOn: string) => {
-    if (!dependsOn || add.isPending) return;
+    if (!dependsOn || add.isPending || disabled) return;
     setCandidate(dependsOn);
     try {
       await add.mutateAsync({ taskId: task.id, dependsOn });
@@ -499,7 +580,7 @@ function DependsSection({
         aria-label="Add dependency"
         className="w-full text-xs border rounded px-2 py-1"
         value={candidate}
-        disabled={add.isPending}
+        disabled={add.isPending || disabled}
         onChange={(e) => addDependency(e.target.value)}
       >
         <option value="">add dependency...</option>

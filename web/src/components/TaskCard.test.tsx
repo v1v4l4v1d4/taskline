@@ -20,22 +20,25 @@ const task: Task = {
   images: [],
 };
 
-function renderCard(onClick = vi.fn()) {
+function renderCard(onClick = vi.fn(), onDelete = vi.fn()) {
   render(
     <DndContext>
-      <TaskCard task={task} isBlocked={false} onClick={onClick} />
+      <TaskCard task={task} isBlocked={false} onClick={onClick} onDelete={onDelete} />
     </DndContext>
   );
 
-  return onClick;
+  return { onClick, onDelete };
 }
 
 describe("TaskCard", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it("opens the task editor when clicking the card content", async () => {
     const user = userEvent.setup();
-    const onClick = renderCard();
+    const { onClick } = renderCard();
 
     await user.click(screen.getByText("Clickable task card"));
 
@@ -43,8 +46,8 @@ describe("TaskCard", () => {
   });
 
   it("does not open the editor when the pointer movement becomes a drag", () => {
-    const onClick = renderCard();
-    const card = screen.getByRole("button", { name: /clickable task card/i });
+    const { onClick } = renderCard();
+    const card = screen.getByRole("button", { name: /open task clickable task card/i });
 
     fireEvent.pointerDown(card, { clientX: 0, clientY: 0 });
     fireEvent.pointerUp(card, { clientX: 8, clientY: 0 });
@@ -53,8 +56,8 @@ describe("TaskCard", () => {
   });
 
   it("does not open the editor from a pointerup without a card pointerdown", () => {
-    const onClick = renderCard();
-    const card = screen.getByRole("button", { name: /clickable task card/i });
+    const { onClick } = renderCard();
+    const card = screen.getByRole("button", { name: /open task clickable task card/i });
 
     fireEvent.pointerUp(card, { clientX: 0, clientY: 0 });
 
@@ -65,5 +68,21 @@ describe("TaskCard", () => {
     renderCard();
 
     expect(screen.queryByText(/^edit$/i)).toBeNull();
+  });
+
+  it("deletes from the card icon without opening the editor", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const { onClick, onDelete } = renderCard();
+
+    const deleteButton = screen.getByRole("button", { name: /delete task clickable task card/i });
+    await user.click(deleteButton);
+
+    expect(confirm).toHaveBeenCalledWith(
+      'Delete task "Clickable task card"? This cascades to dependencies and images.'
+    );
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });

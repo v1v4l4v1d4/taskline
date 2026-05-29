@@ -270,6 +270,11 @@ function ImageSection({ project, task }: { project: Project; task: Task }) {
   const onFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     if (!file || upload.isPending) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Selected file is not an image.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     try {
       const image = await upload.mutateAsync({ taskId: task.id, file });
       setImages((current) =>
@@ -313,7 +318,7 @@ function ImageSection({ project, task }: { project: Project; task: Task }) {
               key={image.id}
               className="text-xs flex items-center gap-2 rounded border border-slate-100 bg-slate-50 px-2 py-1"
             >
-              <span className="font-medium text-slate-700 truncate flex-1">
+              <span className="font-medium text-slate-700 truncate flex-1 min-w-0">
                 {image.filename}
               </span>
               <span className="text-slate-400 shrink-0">

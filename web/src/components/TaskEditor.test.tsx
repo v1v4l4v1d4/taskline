@@ -131,6 +131,7 @@ describe("TaskEditor image attachments", () => {
     renderEditor(vi.fn(), { ...task, images: [existing] });
 
     expect(screen.getByText("before.png")).toBeTruthy();
+    expect(screen.getByText("before.png").className).toContain("min-w-0");
     expect(screen.getByText("image/png")).toBeTruthy();
     expect(screen.getByText("1.5 KB")).toBeTruthy();
   });
@@ -165,5 +166,18 @@ describe("TaskEditor image attachments", () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.body as FormData).get("file")).toBe(file);
+  });
+
+  it("rejects non-image files before uploading", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderEditor();
+
+    const input = screen.getByLabelText(/image attachment/i);
+    const file = new File(["not an image"], "notes.txt", { type: "text/plain" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByText("Selected file is not an image.")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

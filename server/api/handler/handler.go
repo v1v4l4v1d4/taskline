@@ -423,7 +423,7 @@ func (h *Handler) saveUpload(taskID string, fh *multipart.FileHeader) (*model.Im
 	if err != nil {
 		return nil, err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	taskDir := filepath.Join(h.cfg.ImagesDir, taskID)
 	if err := os.MkdirAll(taskDir, 0o700); err != nil {

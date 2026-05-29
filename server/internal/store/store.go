@@ -63,7 +63,7 @@ type Store struct {
 // New opens (or creates) a SQLite database at path and applies migrations.
 // Pass ":memory:" for an ephemeral test database.
 func New(path string) (*Store, error) {
-	dsn := path
+	var dsn string
 	if path != ":memory:" {
 		dsn = fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", filepath.Clean(path))
 	} else {
@@ -490,12 +490,18 @@ func (s *Store) dependsOn(ctx context.Context, start, target string) (bool, erro
 		for rows.Next() {
 			var d string
 			if err := rows.Scan(&d); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return false, err
 			}
 			stack = append(stack, d)
 		}
-		rows.Close()
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return false, err
+		}
+		if err := rows.Close(); err != nil {
+			return false, err
+		}
 	}
 	return false, nil
 }

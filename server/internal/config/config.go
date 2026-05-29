@@ -91,7 +91,9 @@ func loadDotEnv(path string) error {
 			v = v[1 : len(v)-1]
 		}
 		if _, present := os.LookupEnv(k); !present {
-			os.Setenv(k, v)
+			if err := os.Setenv(k, v); err != nil {
+				return err
+			}
 		}
 	}
 	return scanner.Err()

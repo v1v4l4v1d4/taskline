@@ -34,7 +34,7 @@ interface Props {
 export function GraphView({ project }: Props) {
   const tasksQ = useTasks(project.id);
   const updateTask = useUpdateTask(project.id);
-  const tasks = tasksQ.data ?? [];
+  const tasks = useMemo(() => tasksQ.data ?? [], [tasksQ.data]);
 
   // Layout: rough column-by-state, ordered top-to-bottom by priority.
   // Not a real DAG layout, but predictable and quick.

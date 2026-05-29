@@ -106,7 +106,7 @@ func (h *Handler) serveUI(_ context.Context, c *app.RequestContext) {
 		}
 		c.SetStatusCode(http.StatusOK)
 		c.Response.Header.Set("Content-Type", ct)
-		c.Write(data)
+		_, _ = c.Write(data)
 		return
 	}
 	// SPA fallback — every unknown path returns index.html so deep links
@@ -114,7 +114,7 @@ func (h *Handler) serveUI(_ context.Context, c *app.RequestContext) {
 	if data, err := fs.ReadFile(h.uiFS, "index.html"); err == nil {
 		c.SetStatusCode(http.StatusOK)
 		c.Response.Header.Set("Content-Type", "text/html; charset=utf-8")
-		c.Write(data)
+		_, _ = c.Write(data)
 		return
 	}
 	c.SetStatusCode(http.StatusNotFound)
@@ -396,10 +396,10 @@ func writeJSON(c *app.RequestContext, status int, body any) {
 	enc, err := json.Marshal(body)
 	if err != nil {
 		c.SetStatusCode(http.StatusInternalServerError)
-		c.WriteString(`{"error":"json marshal failed"}`)
+		_, _ = c.WriteString(`{"error":"json marshal failed"}`)
 		return
 	}
-	c.Write(enc)
+	_, _ = c.Write(enc)
 }
 
 func writeError(c *app.RequestContext, status int, err error) {
@@ -423,7 +423,7 @@ func (h *Handler) saveUpload(taskID string, fh *multipart.FileHeader) (*model.Im
 	if err != nil {
 		return nil, err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	taskDir := filepath.Join(h.cfg.ImagesDir, taskID)
 	if err := os.MkdirAll(taskDir, 0o700); err != nil {

@@ -28,7 +28,7 @@ func main() {
 		logger.Error("open store", "err", err)
 		os.Exit(1)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	svc := service.New(st)
 	h := handler.New(svc, cfg)

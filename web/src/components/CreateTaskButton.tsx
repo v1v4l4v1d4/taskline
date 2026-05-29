@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Project, TaskType } from "../lib/api";
 import { useCreateTask } from "../hooks/queries";
 
@@ -11,7 +11,7 @@ export function CreateTaskButton({ project }: { project: Project }) {
   const [autoStart, setAutoStart] = useState(true);
   const create = useCreateTask(project.id);
 
-  const submit = () => {
+  const submit = useCallback(() => {
     if (!title.trim() || create.isPending) return;
     create.mutate(
       { title, description, type, priority, auto_start: autoStart },
@@ -25,34 +25,29 @@ export function CreateTaskButton({ project }: { project: Project }) {
         },
       }
     );
-  };
-
-  // Keep a ref to the latest keydown handler so the window listener can
-  // be bound exactly once (instead of re-attaching on every keystroke).
-  const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
-  handlerRef.current = (e: KeyboardEvent) => {
-    const cmd = e.metaKey || e.ctrlKey;
-    if (!open && cmd && e.key.toLowerCase() === "k") {
-      e.preventDefault();
-      setOpen(true);
-      return;
-    }
-    if (!open) return;
-    if (e.key === "Escape") {
-      setOpen(false);
-      return;
-    }
-    if (cmd && e.key === "Enter") {
-      e.preventDefault();
-      submit();
-    }
-  };
+  }, [autoStart, create, description, priority, title, type]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => handlerRef.current(e);
+    const onKey = (e: KeyboardEvent) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      if (!open && cmd && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setOpen(true);
+        return;
+      }
+      if (!open) return;
+      if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (cmd && e.key === "Enter") {
+        e.preventDefault();
+        submit();
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [open, submit]);
 
   return (
     <>

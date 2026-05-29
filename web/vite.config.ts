@@ -6,6 +6,9 @@ import tailwindcss from "@tailwindcss/vite";
 // `go build` time. Keep this in sync with server/web/embed.go.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  test: {
+    environment: "jsdom",
+  },
   build: {
     outDir: "../server/web/dist",
     emptyOutDir: true,

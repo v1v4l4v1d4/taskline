@@ -1,4 +1,5 @@
 import { useDraggable } from "@dnd-kit/core";
+import { useRef } from "react";
 import type { Task } from "../lib/api";
 import { formatRelativeTime } from "../lib/time";
 
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function TaskCard({ task, isBlocked, onClick, overlay = false }: Props) {
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
   // Disable the draggable hook entirely on the overlay clone so the
   // DOM only has a single registered draggable per task id.
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -48,23 +50,61 @@ export function TaskCard({ task, isBlocked, onClick, overlay = false }: Props) {
     ? " opacity-70"
     : "";
 
+  const interactiveClass = overlay
+    ? ""
+    : " cursor-pointer hover:border-slate-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
+
+  function openFromPointer(event: React.PointerEvent<HTMLDivElement>) {
+    if (overlay) return;
+    if (event.button !== 0) {
+      pointerStart.current = null;
+      return;
+    }
+    const start = pointerStart.current;
+    pointerStart.current = null;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.hypot(dx, dy) > 4) return;
+    onClick();
+  }
+
+  function startPointerInteraction(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    pointerStart.current = { x: event.clientX, y: event.clientY };
+    listeners?.onPointerDown?.(event);
+  }
+
+  function openFromKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!overlay && event.key === "Enter") {
+      event.preventDefault();
+      onClick();
+      return;
+    }
+    listeners?.onKeyDown?.(event);
+  }
+
   return (
     <div
       ref={overlay ? undefined : setNodeRef}
       style={style}
+      {...(overlay ? {} : attributes)}
+      {...(overlay ? {} : listeners)}
+      onPointerDown={overlay ? undefined : startPointerInteraction}
+      onPointerUp={openFromPointer}
+      onPointerCancel={() => {
+        pointerStart.current = null;
+      }}
+      onKeyDown={openFromKeyboard}
       className={
-        "rounded-md border border-slate-200 bg-white p-3 shadow-sm border-l-4 " +
+        "rounded-md border border-slate-200 bg-white p-3 shadow-sm border-l-4 transition " +
         typeColor +
-        dragVisualClass
+        dragVisualClass +
+        interactiveClass
       }
     >
       <div
-        className={
-          "flex items-start gap-2" +
-          (overlay ? "" : " cursor-grab active:cursor-grabbing")
-        }
-        {...(overlay ? {} : attributes)}
-        {...(overlay ? {} : listeners)}
+        className="flex items-start gap-2"
       >
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -96,13 +136,7 @@ export function TaskCard({ task, isBlocked, onClick, overlay = false }: Props) {
           <p className="text-sm font-medium leading-snug">{task.title}</p>
         </div>
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <button
-          onClick={onClick}
-          className="text-[10px] text-slate-500 hover:text-slate-900 underline"
-        >
-          edit
-        </button>
+      <div className="mt-2 flex items-center justify-end">
         <span
           className="text-[10px] tabular-nums text-slate-400"
           title={new Date(task.updated_at).toLocaleString()}

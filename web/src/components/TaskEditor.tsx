@@ -34,20 +34,22 @@ interface Props {
   mode?: "create" | "edit";
 }
 
-const EMPTY_TASK: Task = {
-  id: "",
-  project_id: "",
-  title: "",
-  description: "",
-  type: "feature",
-  state: "start",
-  priority: 0,
-  created_at: 0,
-  updated_at: 0,
-  depends_on: [],
-  links: [],
-  images: [],
-};
+function createEmptyTask(projectId: string): Task {
+  return {
+    id: "",
+    project_id: projectId,
+    title: "",
+    description: "",
+    type: "feature",
+    state: "start",
+    priority: 0,
+    created_at: 0,
+    updated_at: 0,
+    depends_on: [],
+    links: [],
+    images: [],
+  };
+}
 
 export function TaskEditor({
   project,
@@ -57,7 +59,7 @@ export function TaskEditor({
   mode = task ? "edit" : "create",
 }: Props) {
   const isCreate = mode === "create";
-  const currentTask = task ?? { ...EMPTY_TASK, project_id: project.id };
+  const currentTask = task ?? createEmptyTask(project.id);
   const [title, setTitle] = useState(currentTask.title);
   const [description, setDescription] = useState(currentTask.description);
   const [type, setType] = useState<TaskType>(currentTask.type);
@@ -70,6 +72,7 @@ export function TaskEditor({
   const create = useCreateTask(project.id);
   const update = useUpdateTask(project.id);
   const isSaving = create.isPending || update.isPending;
+  const createdTaskRef = useRef<Task | null>(null);
 
   const closeMarkdownEditor = () => {
     setMarkdownOpen(false);
@@ -97,15 +100,19 @@ export function TaskEditor({
     }
     try {
       if (isCreate) {
-        const created = await create.mutateAsync({
-          title: trimmedTitle,
-          description,
-          type,
-          priority,
-          auto_start: state !== "pending",
-        });
-        if (state !== "pending" && state !== "start") {
-          await update.mutateAsync({ id: created.id, patch: { state } });
+        let activeTask = createdTaskRef.current;
+        if (!activeTask) {
+          activeTask = await create.mutateAsync({
+            title: trimmedTitle,
+            description,
+            type,
+            priority,
+            auto_start: state !== "pending",
+          });
+          createdTaskRef.current = activeTask;
+        }
+        if (activeTask.state !== state) {
+          await update.mutateAsync({ id: activeTask.id, patch: { state } });
         }
       } else {
         await update.mutateAsync({

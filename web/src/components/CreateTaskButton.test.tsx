@@ -99,4 +99,61 @@ describe("CreateTaskButton", () => {
       })
     );
   });
+
+  it("retries a failed create-state update without creating a duplicate task", async () => {
+    const user = userEvent.setup();
+    const created: Task = {
+      ...dependency,
+      id: "task-3",
+      title: "Created once",
+      description: "Needs dev state",
+      type: "feature",
+      state: "start",
+      priority: 1,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(created), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "state update failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...created, state: "dev" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    renderCreateButton();
+
+    await user.click(screen.getByRole("button", { name: /new task/i }));
+    await user.type(screen.getByLabelText("Title"), created.title);
+    await user.type(screen.getByLabelText("Description"), created.description);
+    await user.selectOptions(screen.getByLabelText("State"), "dev");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("state update failed")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit).method === "POST"))
+      .toHaveLength(1);
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/tasks/task-3");
+    expect(fetchMock.mock.calls[2][1]).toEqual(
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ state: "dev" }),
+      })
+    );
+  });
 });

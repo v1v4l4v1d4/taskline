@@ -116,6 +116,19 @@ describe("TaskEditor markdown description editing", () => {
   });
 });
 
+describe("TaskEditor edit actions", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not render a task delete button in edit mode", () => {
+    renderEditor();
+
+    expect(screen.queryByRole("button", { name: /^delete$/i })).toBeNull();
+  });
+});
+
 describe("TaskEditor image attachments", () => {
   afterEach(() => {
     cleanup();

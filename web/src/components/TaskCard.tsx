@@ -1,4 +1,5 @@
 import { useDraggable } from "@dnd-kit/core";
+import { Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { Task } from "../lib/api";
 import { formatRelativeTime } from "../lib/time";
@@ -7,6 +8,7 @@ interface Props {
   task: Task;
   isBlocked: boolean;
   onClick: () => void;
+  onDelete?: () => void;
   // When true, the card renders as a static clone for use inside
   // <DragOverlay/> — no useDraggable wiring, no transform, the
   // overlay handles positioning. The original card in the column
@@ -15,8 +17,9 @@ interface Props {
   overlay?: boolean;
 }
 
-export function TaskCard({ task, isBlocked, onClick, overlay = false }: Props) {
+export function TaskCard({ task, isBlocked, onClick, onDelete, overlay = false }: Props) {
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const skipNextDeleteClick = useRef(false);
   // Disable the draggable hook entirely on the overlay clone so the
   // DOM only has a single registered draggable per task id.
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -84,12 +87,32 @@ export function TaskCard({ task, isBlocked, onClick, overlay = false }: Props) {
     listeners?.onKeyDown?.(event);
   }
 
+  function deleteFromCard() {
+    pointerStart.current = null;
+    if (
+      !globalThis.confirm(
+        `Delete task "${task.title}"? This cascades to dependencies and images.`
+      )
+    ) {
+      return;
+    }
+    onDelete?.();
+  }
+
+  function skipFollowUpClick() {
+    skipNextDeleteClick.current = true;
+    window.setTimeout(() => {
+      skipNextDeleteClick.current = false;
+    }, 0);
+  }
+
   return (
     <div
       ref={overlay ? undefined : setNodeRef}
       style={style}
       {...(overlay ? {} : attributes)}
       {...(overlay ? {} : listeners)}
+      aria-label={overlay ? undefined : `Open task ${task.title}`}
       onPointerDown={overlay ? undefined : startPointerInteraction}
       onPointerUp={openFromPointer}
       onPointerCancel={() => {
@@ -97,15 +120,47 @@ export function TaskCard({ task, isBlocked, onClick, overlay = false }: Props) {
       }}
       onKeyDown={openFromKeyboard}
       className={
-        "rounded-md border border-slate-200 bg-white p-3 shadow-sm border-l-4 transition " +
+        "relative group rounded-md border border-slate-200 bg-white p-3 shadow-sm border-l-4 transition " +
         typeColor +
         dragVisualClass +
         interactiveClass
       }
     >
-      <div
-        className="flex items-start gap-2"
-      >
+      {!overlay && onDelete && (
+        <button
+          type="button"
+          aria-label={`Delete task ${task.title}`}
+          title="Delete task"
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white/90 text-slate-400 opacity-0 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-red-300 group-hover:opacity-100"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            pointerStart.current = null;
+          }}
+          onPointerUp={(event) => {
+            event.stopPropagation();
+            if (event.button !== 0) return;
+            deleteFromCard();
+            skipFollowUpClick();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (skipNextDeleteClick.current) {
+              skipNextDeleteClick.current = false;
+              return;
+            }
+            deleteFromCard();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            deleteFromCard();
+          }}
+        >
+          <Trash2 size={13} className="mx-auto" aria-hidden="true" />
+        </button>
+      )}
+      <div className="flex items-start gap-2 pr-7">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] uppercase tracking-wide text-slate-500">

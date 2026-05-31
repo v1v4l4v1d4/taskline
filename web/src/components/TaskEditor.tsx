@@ -465,19 +465,25 @@ function ImageSection({
       originX: previewOffset.x,
       originY: previewOffset.y,
     };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort in browser test environments.
+    }
     setPreviewDragging(true);
   };
+
+  const previewDragTransform = (x: number, y: number) =>
+    `translate3d(${x}px, ${y}px, 0)`;
 
   const movePreviewDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
     const drag = previewDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    setPreviewOffset({
-      x: drag.originX + event.clientX - drag.startX,
-      y: drag.originY + event.clientY - drag.startY,
-    });
+    const x = drag.originX + event.clientX - drag.startX;
+    const y = drag.originY + event.clientY - drag.startY;
+    event.currentTarget.style.transform = previewDragTransform(x, y);
   };
 
   const stopPreviewDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
@@ -485,8 +491,16 @@ function ImageSection({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
+    const x = drag.originX + event.clientX - drag.startX;
+    const y = drag.originY + event.clientY - drag.startY;
     previewDragRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort in browser test environments.
+    }
+    event.currentTarget.style.transform = previewDragTransform(x, y);
+    setPreviewOffset({ x, y });
     setPreviewDragging(false);
   };
 
@@ -691,7 +705,7 @@ function ImageSection({
                 (previewDragging ? "cursor-grabbing" : "cursor-grab")
               }
               style={{
-                transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0)`,
+                transform: previewDragTransform(previewOffset.x, previewOffset.y),
               }}
               onPointerDown={startPreviewDrag}
               onPointerMove={movePreviewDrag}

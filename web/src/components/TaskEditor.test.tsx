@@ -568,6 +568,11 @@ describe("TaskEditor image attachments", () => {
     expect(await screen.findByRole("dialog", { name: /image preview/i })).toBeTruthy();
     const preview = screen.getByRole("img", { name: /before.png/i }) as HTMLImageElement;
     expect(preview.getAttribute("src")).toBe("/api/v1/images/image-1");
+    expect(preview.className).toContain("object-contain");
+    expect(preview.className).toContain("cursor-grab");
+    expect(preview.className).toContain("max-w-[calc(100vw-2rem)]");
+    expect(preview.className).toContain("max-h-[calc(100vh-6rem)]");
+    expect(preview.getAttribute("draggable")).toBe("false");
 
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() =>
@@ -596,6 +601,44 @@ describe("TaskEditor image attachments", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: /image preview/i })).toBeNull()
     );
+  });
+
+  it("pans the image preview by dragging without closing the dialog", async () => {
+    const user = userEvent.setup();
+    const existing: TaskImage = {
+      id: "image-1",
+      task_id: task.id,
+      filename: "wide.png",
+      mime_type: "image/png",
+      size_bytes: 1536,
+      uploaded_at: 1780051741142,
+    };
+
+    renderEditor(vi.fn(), { ...task, images: [existing] });
+
+    await user.click(screen.getByRole("button", { name: /view image wide.png/i }));
+    const dialog = await screen.findByRole("dialog", { name: /image preview/i });
+    const preview = screen.getByRole("img", { name: /wide.png/i }) as HTMLImageElement;
+
+    fireEvent.pointerDown(preview, { pointerId: 1, clientX: 100, clientY: 80 });
+    expect(preview.className).toContain("cursor-grabbing");
+
+    fireEvent.pointerMove(preview, { pointerId: 1, clientX: 148, clientY: 117 });
+
+    expect(preview.style.transform).toContain("48px");
+    expect(preview.style.transform).toContain("37px");
+
+    fireEvent.pointerUp(preview, { pointerId: 1, clientX: 148, clientY: 117 });
+
+    expect(preview.className).toContain("cursor-grab");
+    expect(dialog).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: /image preview/i })).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await user.click(screen.getByRole("button", { name: /view image wide.png/i }));
+
+    expect((screen.getByRole("img", { name: /wide.png/i }) as HTMLImageElement).style.transform)
+      .toBe("translate3d(0px, 0px, 0)");
   });
 
   it("deletes an existing image attachment from the list", async () => {

@@ -6,6 +6,8 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
 import { FileCode2, ImagePlus, Trash2, X } from "lucide-react";
 import {
@@ -61,6 +63,46 @@ function createEmptyTask(projectId: string): Task {
   };
 }
 
+type PendingImage = TaskImage & {
+  file: File;
+  pending: boolean;
+  preview_url?: string;
+};
+
+type DisplayImage = TaskImage & {
+  pending?: boolean;
+  preview_url?: string;
+};
+
+type PendingLink = TaskLink & {
+  pending: boolean;
+};
+
+type DisplayLink = TaskLink & {
+  pending?: boolean;
+};
+
+let draftId = 0;
+
+function nextDraftId(prefix: string): string {
+  draftId += 1;
+  return `${prefix}-${draftId}`;
+}
+
+function createFilePreviewURL(file: File): string | undefined {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+    return undefined;
+  }
+  return URL.createObjectURL(file);
+}
+
+function revokeFilePreviewURL(url: string | undefined) {
+  if (!url || typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") {
+    return;
+  }
+  URL.revokeObjectURL(url);
+}
+
 export function TaskEditor({
   project,
   task,
@@ -69,7 +111,8 @@ export function TaskEditor({
   mode = task ? "edit" : "create",
 }: Props) {
   const isCreate = mode === "create";
-  const currentTask = task ?? createEmptyTask(project.id);
+  const [createdTask, setCreatedTask] = useState<Task | null>(null);
+  const currentTask = createdTask ?? task ?? createEmptyTask(project.id);
   const [title, setTitle] = useState(currentTask.title);
   const [description, setDescription] = useState(currentTask.description);
   const [type, setType] = useState<TaskType>(currentTask.type);
@@ -77,12 +120,23 @@ export function TaskEditor({
   const [priority, setPriority] = useState(currentTask.priority);
   const [error, setError] = useState<string | null>(null);
   const [markdownOpen, setMarkdownOpen] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
+  const [pendingDependencyIds, setPendingDependencyIds] = useState<string[]>([]);
   const markdownButtonRef = useRef<HTMLButtonElement>(null);
 
   const create = useCreateTask(project.id);
   const update = useUpdateTask(project.id);
-  const isSaving = create.isPending || update.isPending;
-  const createdTaskRef = useRef<Task | null>(null);
+  const uploadImage = useUploadImage(project.id);
+  const addLink = useAddLink(project.id);
+  const addDependency = useAddDependency(project.id);
+  const isSaving =
+    create.isPending ||
+    update.isPending ||
+    uploadImage.isPending ||
+    addLink.isPending ||
+    addDependency.isPending;
+  const createdPendingDependencyIdsRef = useRef<Set<string>>(new Set());
 
   const closeMarkdownEditor = () => {
     setMarkdownOpen(false);
@@ -110,7 +164,7 @@ export function TaskEditor({
     }
     try {
       if (isCreate) {
-        let activeTask = createdTaskRef.current;
+        let activeTask = createdTask;
         if (!activeTask) {
           activeTask = await create.mutateAsync({
             title: trimmedTitle,
@@ -119,10 +173,48 @@ export function TaskEditor({
             priority,
             auto_start: state !== "pending",
           });
-          createdTaskRef.current = activeTask;
+          setCreatedTask(activeTask);
         }
         if (activeTask.state !== state) {
-          await update.mutateAsync({ id: activeTask.id, patch: { state } });
+          activeTask = await update.mutateAsync({ id: activeTask.id, patch: { state } });
+          setCreatedTask(activeTask);
+        }
+        for (const image of pendingImages) {
+          if (!image.pending) continue;
+          const uploaded = await uploadImage.mutateAsync({
+            taskId: activeTask.id,
+            file: image.file,
+          });
+          setPendingImages((current) =>
+            current.map((item) =>
+              item.id === image.id
+                ? {
+                    ...uploaded,
+                    file: item.file,
+                    pending: false,
+                    preview_url: item.preview_url,
+                  }
+                : item
+            )
+          );
+        }
+        for (const link of pendingLinks) {
+          if (!link.pending) continue;
+          const createdLink = await addLink.mutateAsync({
+            taskId: activeTask.id,
+            url: link.url,
+            label: link.label,
+          });
+          setPendingLinks((current) =>
+            current.map((item) =>
+              item.id === link.id ? { ...createdLink, pending: false } : item
+            )
+          );
+        }
+        for (const dependsOn of pendingDependencyIds) {
+          if (createdPendingDependencyIdsRef.current.has(dependsOn)) continue;
+          await addDependency.mutateAsync({ taskId: activeTask.id, dependsOn });
+          createdPendingDependencyIdsRef.current.add(dependsOn);
         }
       } else {
         await update.mutateAsync({
@@ -232,15 +324,26 @@ export function TaskEditor({
             </label>
           </div>
 
-          <ImageSection project={project} task={currentTask} disabled={isCreate} />
+          <ImageSection
+            project={project}
+            task={currentTask}
+            pendingImages={isCreate ? pendingImages : undefined}
+            setPendingImages={isCreate ? setPendingImages : undefined}
+          />
 
-          <LinkSection project={project} task={currentTask} disabled={isCreate} />
+          <LinkSection
+            project={project}
+            task={currentTask}
+            pendingLinks={isCreate ? pendingLinks : undefined}
+            setPendingLinks={isCreate ? setPendingLinks : undefined}
+          />
 
           <DependsSection
             project={project}
             task={currentTask}
             allTasks={allTasks}
-            disabled={isCreate}
+            pendingDependencyIds={isCreate ? pendingDependencyIds : undefined}
+            setPendingDependencyIds={isCreate ? setPendingDependencyIds : undefined}
           />
 
           {error && <p className="text-xs text-red-600">{error}</p>}
@@ -295,21 +398,37 @@ function ImageSection({
   project,
   task,
   disabled = false,
+  pendingImages,
+  setPendingImages,
 }: {
   project: Project;
   task: Task;
   disabled?: boolean;
+  pendingImages?: PendingImage[];
+  setPendingImages?: Dispatch<SetStateAction<PendingImage[]>>;
 }) {
   const [images, setImages] = useState<TaskImage[]>(task.images ?? []);
-  const [previewImage, setPreviewImage] = useState<TaskImage | null>(null);
+  const displayedImages = pendingImages ?? images;
+  const [previewImage, setPreviewImage] = useState<DisplayImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const draftPreviewURLsRef = useRef<Set<string>>(new Set());
   const upload = useUploadImage(project.id);
   const del = useDeleteImage(project.id);
 
   useEffect(() => {
     setImages(task.images ?? []);
   }, [task.id, task.images]);
+
+  useEffect(() => {
+    const draftPreviewURLs = draftPreviewURLsRef.current;
+    return () => {
+      for (const url of draftPreviewURLs) {
+        revokeFilePreviewURL(url);
+      }
+      draftPreviewURLs.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (!previewImage) return;
@@ -332,11 +451,29 @@ function ImageSection({
   const uploadFile = useCallback(
     async (file: File) => {
       if (upload.isPending || disabled) return;
+      if (setPendingImages) {
+        const previewURL = createFilePreviewURL(file);
+        if (previewURL) draftPreviewURLsRef.current.add(previewURL);
+        const image: PendingImage = {
+          id: nextDraftId("draft-image"),
+          task_id: task.id,
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size,
+          uploaded_at: 0,
+          preview_url: previewURL,
+          file,
+          pending: true,
+        };
+        setPendingImages((current) => [...current, image]);
+        setError(null);
+        return;
+      }
       const image = await upload.mutateAsync({ taskId: task.id, file });
       appendImage(image);
       setError(null);
     },
-    [appendImage, disabled, task.id, upload]
+    [appendImage, disabled, setPendingImages, task.id, upload]
   );
 
   const onFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -377,10 +514,24 @@ function ImageSection({
     return () => window.removeEventListener("paste", onPaste);
   }, [disabled, uploadPastedImages]);
 
-  const removeImage = async (image: TaskImage) => {
+  const removeImage = async (image: DisplayImage) => {
     try {
+      if (image.pending && setPendingImages) {
+        revokeFilePreviewURL(image.preview_url);
+        if (image.preview_url) draftPreviewURLsRef.current.delete(image.preview_url);
+        setPendingImages((current) => current.filter((item) => item.id !== image.id));
+        if (previewImage?.id === image.id) setPreviewImage(null);
+        setError(null);
+        return;
+      }
       await del.mutateAsync(image.id);
-      setImages((current) => current.filter((item) => item.id !== image.id));
+      revokeFilePreviewURL(image.preview_url);
+      if (image.preview_url) draftPreviewURLsRef.current.delete(image.preview_url);
+      if (setPendingImages) {
+        setPendingImages((current) => current.filter((item) => item.id !== image.id));
+      } else {
+        setImages((current) => current.filter((item) => item.id !== image.id));
+      }
       if (previewImage?.id === image.id) setPreviewImage(null);
       setError(null);
     } catch (err) {
@@ -411,9 +562,9 @@ function ImageSection({
           />
         </label>
       </div>
-      {images.length > 0 ? (
+      {displayedImages.length > 0 ? (
         <ul className="space-y-1">
-          {images.map((image) => (
+          {displayedImages.map((image) => (
             <li
               key={image.id}
               className="text-xs flex items-center gap-2 rounded border border-slate-100 bg-slate-50 px-2 py-1 group"
@@ -477,7 +628,11 @@ function ImageSection({
             <div className="bg-slate-950 p-2 flex items-center justify-center">
               <img
                 alt={previewImage.filename}
-                src={taskImageURL(previewImage.id)}
+                src={
+                  previewImage.pending
+                    ? previewImage.preview_url ?? ""
+                    : taskImageURL(previewImage.id)
+                }
                 className="max-w-[88vw] max-h-[78vh] object-contain"
               />
             </div>
@@ -517,12 +672,17 @@ function LinkSection({
   project,
   task,
   disabled = false,
+  pendingLinks,
+  setPendingLinks,
 }: {
   project: Project;
   task: Task;
   disabled?: boolean;
+  pendingLinks?: PendingLink[];
+  setPendingLinks?: Dispatch<SetStateAction<PendingLink[]>>;
 }) {
   const [links, setLinks] = useState<TaskLink[]>(task.links ?? []);
+  const displayedLinks: DisplayLink[] = pendingLinks ?? links;
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -536,6 +696,21 @@ function LinkSection({
   const submit = async () => {
     if (!url.trim() || add.isPending || disabled) return;
     try {
+      if (setPendingLinks) {
+        const link: PendingLink = {
+          id: nextDraftId("draft-link"),
+          task_id: task.id,
+          url: url.trim(),
+          label: label.trim(),
+          created_at: 0,
+          pending: true,
+        };
+        setPendingLinks((current) => [...current, link]);
+        setUrl("");
+        setLabel("");
+        setError(null);
+        return;
+      }
       const link = await add.mutateAsync({ taskId: task.id, url: url.trim(), label: label.trim() });
       setLinks((current) =>
         current.some((item) => item.id === link.id) ? current : [...current, link]
@@ -551,9 +726,9 @@ function LinkSection({
   return (
     <div className="border-t pt-3 space-y-2">
       <p className="text-xs font-medium text-slate-500">Links</p>
-      {links.length > 0 && (
+      {displayedLinks.length > 0 && (
         <ul className="space-y-1">
-          {links.map((l) => (
+          {displayedLinks.map((l) => (
             <li key={l.id} className="text-xs flex items-center gap-2 group">
               <a
                 href={l.url}
@@ -570,8 +745,16 @@ function LinkSection({
                 className="h-5 w-5 shrink-0 rounded text-slate-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-red-50 hover:text-red-600 flex items-center justify-center"
                 onClick={async () => {
                   try {
+                    if (l.pending && setPendingLinks) {
+                      setPendingLinks((current) => current.filter((item) => item.id !== l.id));
+                      return;
+                    }
                     await del.mutateAsync(l.id);
-                    setLinks((current) => current.filter((item) => item.id !== l.id));
+                    if (setPendingLinks) {
+                      setPendingLinks((current) => current.filter((item) => item.id !== l.id));
+                    } else {
+                      setLinks((current) => current.filter((item) => item.id !== l.id));
+                    }
                   } catch (err) {
                     setError((err as Error).message);
                   }
@@ -617,13 +800,18 @@ function DependsSection({
   task,
   allTasks,
   disabled = false,
+  pendingDependencyIds,
+  setPendingDependencyIds,
 }: {
   project: Project;
   task: Task;
   allTasks: Task[];
   disabled?: boolean;
+  pendingDependencyIds?: string[];
+  setPendingDependencyIds?: Dispatch<SetStateAction<string[]>>;
 }) {
   const [dependencyIds, setDependencyIds] = useState<string[]>(task.depends_on ?? []);
+  const selectedDependencyIds = pendingDependencyIds ?? dependencyIds;
   const [candidate, setCandidate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const add = useAddDependency(project.id);
@@ -635,13 +823,20 @@ function DependsSection({
 
   const byId = new Map(allTasks.map((t) => [t.id, t]));
   const candidates = disabled ? [] : allTasks.filter(
-    (t) => t.id !== task.id && t.state !== "done" && !dependencyIds.includes(t.id)
+    (t) => t.id !== task.id && t.state !== "done" && !selectedDependencyIds.includes(t.id)
   );
 
   const addDependency = async (dependsOn: string) => {
     if (!dependsOn || add.isPending || disabled) return;
     setCandidate(dependsOn);
     try {
+      if (setPendingDependencyIds) {
+        setPendingDependencyIds((current) =>
+          current.includes(dependsOn) ? current : [...current, dependsOn]
+        );
+        setError(null);
+        return;
+      }
       await add.mutateAsync({ taskId: task.id, dependsOn });
       setDependencyIds((current) =>
         current.includes(dependsOn) ? current : [...current, dependsOn]
@@ -656,6 +851,11 @@ function DependsSection({
 
   const removeDependency = async (dependsOn: string) => {
     try {
+      if (setPendingDependencyIds) {
+        setPendingDependencyIds((current) => current.filter((id) => id !== dependsOn));
+        setError(null);
+        return;
+      }
       await del.mutateAsync({ taskId: task.id, dependsOn });
       setDependencyIds((current) => current.filter((id) => id !== dependsOn));
       setError(null);
@@ -667,9 +867,9 @@ function DependsSection({
   return (
     <div className="border-t pt-3 space-y-2">
       <p className="text-xs font-medium text-slate-500">Depends</p>
-      {dependencyIds.length > 0 ? (
+      {selectedDependencyIds.length > 0 ? (
         <ul className="space-y-1">
-          {dependencyIds.map((id) => {
+          {selectedDependencyIds.map((id) => {
             const dep = byId.get(id);
             const label = dep?.title ?? id.slice(0, 8);
             return (

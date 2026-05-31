@@ -51,6 +51,25 @@ function renderEditor(
   return onClose;
 }
 
+function renderCreateEditor(onClose = vi.fn(), allTasks: Task[] = []) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <QueryClientProvider client={client}>
+      <TaskEditor
+        project={project}
+        allTasks={allTasks}
+        onClose={onClose}
+        mode="create"
+      />
+    </QueryClientProvider>
+  );
+
+  return onClose;
+}
+
 describe("TaskEditor markdown description editing", () => {
   afterEach(() => {
     cleanup();
@@ -113,6 +132,384 @@ describe("TaskEditor markdown description editing", () => {
     fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => expect(document.activeElement).toBe(openButton));
+  });
+});
+
+describe("TaskEditor create attachments", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const activeDep: Task = {
+    ...task,
+    id: "task-2",
+    title: "Active dependency",
+    state: "start",
+  };
+
+  it("keeps image, link, and dependency controls enabled in create mode", () => {
+    renderCreateEditor(vi.fn(), [activeDep]);
+
+    expect((screen.getByLabelText(/image attachment/i) as HTMLInputElement).disabled).toBe(
+      false
+    );
+    expect((screen.getByPlaceholderText("https://…") as HTMLInputElement).disabled).toBe(
+      false
+    );
+    expect(
+      (screen.getByPlaceholderText("label (optional)") as HTMLInputElement).disabled
+    ).toBe(false);
+    expect((screen.getByLabelText(/add dependency/i) as HTMLSelectElement).disabled).toBe(
+      false
+    );
+    expect(screen.getByRole("option", { name: /active dependency/i })).toBeTruthy();
+  });
+
+  it("creates the task before replaying staged images, links, and dependencies", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const created: Task = {
+      ...task,
+      id: "task-created",
+      title: "Create with staged metadata",
+      description: "Draft body",
+      type: "feature",
+      state: "start",
+      priority: 0,
+    };
+    const uploaded: TaskImage = {
+      id: "image-created",
+      task_id: created.id,
+      filename: "draft.png",
+      mime_type: "image/png",
+      size_bytes: 5,
+      uploaded_at: 1780051741144,
+    };
+    const link: TaskLink = {
+      id: "link-created",
+      task_id: created.id,
+      url: "https://example.com/spec",
+      label: "Spec link",
+      created_at: 1780051741144,
+    };
+    const fetchMock = vi.fn((url: string | URL | Request, _init?: RequestInit) => {
+      const path = String(url);
+      if (path === "/api/v1/projects/project-1/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(created), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/images") {
+        return Promise.resolve(
+          new Response(JSON.stringify(uploaded), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/links") {
+        return Promise.resolve(
+          new Response(JSON.stringify(link), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/deps") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ task_id: created.id, depends_on: activeDep.id }), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unexpected ${path}` }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderCreateEditor(onClose, [activeDep]);
+
+    await user.type(screen.getByLabelText("Title"), created.title);
+    const file = new File(["image"], "draft.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText(/image attachment/i), file);
+    expect(await screen.findByText("draft.png")).toBeTruthy();
+
+    await user.type(screen.getByPlaceholderText("https://…"), link.url);
+    await user.type(screen.getByPlaceholderText("label (optional)"), link.label);
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
+    expect(await screen.findByText("Spec link")).toBeTruthy();
+
+    await user.selectOptions(screen.getByLabelText(/add dependency/i), activeDep.id);
+    expect(await screen.findByText("Active dependency")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init?.method])).toEqual([
+      ["/api/v1/projects/project-1/tasks", "POST"],
+      ["/api/v1/tasks/task-created/images", "POST"],
+      ["/api/v1/tasks/task-created/links", "POST"],
+      ["/api/v1/tasks/task-created/deps", "POST"],
+    ]);
+    expect((fetchMock.mock.calls[1][1]?.body as FormData).get("file")).toBe(file);
+    expect(fetchMock.mock.calls[2][1]?.body).toBe(
+      JSON.stringify({ url: link.url, label: link.label })
+    );
+    expect(fetchMock.mock.calls[3][1]?.body).toBe(
+      JSON.stringify({ depends_on: activeDep.id })
+    );
+  });
+
+  it("retries failed staged operations without duplicating successful work", async () => {
+    const user = userEvent.setup();
+    const created: Task = {
+      ...task,
+      id: "task-created",
+      title: "Retry staged metadata",
+      state: "start",
+    };
+    const link: TaskLink = {
+      id: "link-created",
+      task_id: created.id,
+      url: "https://example.com/retry",
+      label: "Retry",
+      created_at: 1780051741144,
+    };
+    let linkAttempts = 0;
+    const fetchMock = vi.fn((url: string | URL | Request) => {
+      const path = String(url);
+      if (path === "/api/v1/projects/project-1/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(created), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/images") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "image-created",
+              task_id: created.id,
+              filename: "draft.png",
+              mime_type: "image/png",
+              size_bytes: 5,
+              uploaded_at: 1780051741144,
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/links") {
+        linkAttempts += 1;
+        if (linkAttempts === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: "link failed" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(link), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/deps") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ task_id: created.id, depends_on: activeDep.id }), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unexpected ${path}` }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderCreateEditor(vi.fn(), [activeDep]);
+
+    await user.type(screen.getByLabelText("Title"), created.title);
+    await user.upload(
+      screen.getByLabelText(/image attachment/i),
+      new File(["image"], "draft.png", { type: "image/png" })
+    );
+    await user.type(screen.getByPlaceholderText("https://…"), link.url);
+    await user.type(screen.getByPlaceholderText("label (optional)"), link.label);
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
+    await user.selectOptions(screen.getByLabelText(/add dependency/i), activeDep.id);
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+    expect(await screen.findByText("link failed")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/projects/project-1/tasks")
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/tasks/task-created/images")
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/tasks/task-created/links")
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/tasks/task-created/deps")
+    ).toHaveLength(1);
+  });
+
+  it("deletes staged images and links from the server after a partial create failure", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const created: Task = {
+      ...task,
+      id: "task-created",
+      title: "Delete completed staged metadata",
+      state: "start",
+    };
+    const uploaded: TaskImage = {
+      id: "image-created",
+      task_id: created.id,
+      filename: "draft.png",
+      mime_type: "image/png",
+      size_bytes: 5,
+      uploaded_at: 1780051741144,
+    };
+    const link: TaskLink = {
+      id: "link-created",
+      task_id: created.id,
+      url: "https://example.com/delete-after-failure",
+      label: "Delete me",
+      created_at: 1780051741144,
+    };
+    let dependencyAttempts = 0;
+    const fetchMock = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      const method = init?.method;
+      if (path === "/api/v1/projects/project-1/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(created), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/images") {
+        return Promise.resolve(
+          new Response(JSON.stringify(uploaded), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/links") {
+        return Promise.resolve(
+          new Response(JSON.stringify(link), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/tasks/task-created/deps") {
+        dependencyAttempts += 1;
+        if (dependencyAttempts === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: "dependency failed" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ task_id: created.id, depends_on: activeDep.id }), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/images/image-created" && method === "DELETE") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ deleted: true, id: uploaded.id }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      if (path === "/api/v1/links/link-created" && method === "DELETE") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ deleted: true, id: link.id }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unexpected ${method ?? "GET"} ${path}` }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderCreateEditor(onClose, [activeDep]);
+
+    await user.type(screen.getByLabelText("Title"), created.title);
+    await user.upload(
+      screen.getByLabelText(/image attachment/i),
+      new File(["image"], "draft.png", { type: "image/png" })
+    );
+    await user.type(screen.getByPlaceholderText("https://…"), link.url);
+    await user.type(screen.getByPlaceholderText("label (optional)"), link.label);
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
+    await user.selectOptions(screen.getByLabelText(/add dependency/i), activeDep.id);
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+    expect(await screen.findByText("dependency failed")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /delete image draft.png/i }));
+    await user.click(screen.getByRole("button", { name: /remove link delete me/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/images/image-created",
+        expect.objectContaining({ method: "DELETE" })
+      )
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/links/link-created",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(screen.queryByText("draft.png")).toBeNull();
+    expect(screen.queryByText("Delete me")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/tasks/task-created/images")
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/tasks/task-created/links")
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/v1/tasks/task-created/deps")
+    ).toHaveLength(2);
   });
 });
 

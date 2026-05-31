@@ -65,7 +65,7 @@ function createEmptyTask(projectId: string): Task {
 
 type PendingImage = TaskImage & {
   file: File;
-  pending: true;
+  pending: boolean;
   preview_url?: string;
 };
 
@@ -75,7 +75,7 @@ type DisplayImage = TaskImage & {
 };
 
 type PendingLink = TaskLink & {
-  pending: true;
+  pending: boolean;
 };
 
 type DisplayLink = TaskLink & {
@@ -111,7 +111,8 @@ export function TaskEditor({
   mode = task ? "edit" : "create",
 }: Props) {
   const isCreate = mode === "create";
-  const currentTask = task ?? createEmptyTask(project.id);
+  const [createdTask, setCreatedTask] = useState<Task | null>(null);
+  const currentTask = createdTask ?? task ?? createEmptyTask(project.id);
   const [title, setTitle] = useState(currentTask.title);
   const [description, setDescription] = useState(currentTask.description);
   const [type, setType] = useState<TaskType>(currentTask.type);
@@ -135,9 +136,6 @@ export function TaskEditor({
     uploadImage.isPending ||
     addLink.isPending ||
     addDependency.isPending;
-  const createdTaskRef = useRef<Task | null>(null);
-  const uploadedPendingImageIdsRef = useRef<Set<string>>(new Set());
-  const createdPendingLinkIdsRef = useRef<Set<string>>(new Set());
   const createdPendingDependencyIdsRef = useRef<Set<string>>(new Set());
 
   const closeMarkdownEditor = () => {
@@ -166,7 +164,7 @@ export function TaskEditor({
     }
     try {
       if (isCreate) {
-        let activeTask = createdTaskRef.current;
+        let activeTask = createdTask;
         if (!activeTask) {
           activeTask = await create.mutateAsync({
             title: trimmedTitle,
@@ -175,25 +173,43 @@ export function TaskEditor({
             priority,
             auto_start: state !== "pending",
           });
-          createdTaskRef.current = activeTask;
+          setCreatedTask(activeTask);
         }
         if (activeTask.state !== state) {
           activeTask = await update.mutateAsync({ id: activeTask.id, patch: { state } });
-          createdTaskRef.current = activeTask;
+          setCreatedTask(activeTask);
         }
         for (const image of pendingImages) {
-          if (uploadedPendingImageIdsRef.current.has(image.id)) continue;
-          await uploadImage.mutateAsync({ taskId: activeTask.id, file: image.file });
-          uploadedPendingImageIdsRef.current.add(image.id);
+          if (!image.pending) continue;
+          const uploaded = await uploadImage.mutateAsync({
+            taskId: activeTask.id,
+            file: image.file,
+          });
+          setPendingImages((current) =>
+            current.map((item) =>
+              item.id === image.id
+                ? {
+                    ...uploaded,
+                    file: item.file,
+                    pending: false,
+                    preview_url: item.preview_url,
+                  }
+                : item
+            )
+          );
         }
         for (const link of pendingLinks) {
-          if (createdPendingLinkIdsRef.current.has(link.id)) continue;
-          await addLink.mutateAsync({
+          if (!link.pending) continue;
+          const createdLink = await addLink.mutateAsync({
             taskId: activeTask.id,
             url: link.url,
             label: link.label,
           });
-          createdPendingLinkIdsRef.current.add(link.id);
+          setPendingLinks((current) =>
+            current.map((item) =>
+              item.id === link.id ? { ...createdLink, pending: false } : item
+            )
+          );
         }
         for (const dependsOn of pendingDependencyIds) {
           if (createdPendingDependencyIdsRef.current.has(dependsOn)) continue;
@@ -509,7 +525,13 @@ function ImageSection({
         return;
       }
       await del.mutateAsync(image.id);
-      setImages((current) => current.filter((item) => item.id !== image.id));
+      revokeFilePreviewURL(image.preview_url);
+      if (image.preview_url) draftPreviewURLsRef.current.delete(image.preview_url);
+      if (setPendingImages) {
+        setPendingImages((current) => current.filter((item) => item.id !== image.id));
+      } else {
+        setImages((current) => current.filter((item) => item.id !== image.id));
+      }
       if (previewImage?.id === image.id) setPreviewImage(null);
       setError(null);
     } catch (err) {
@@ -728,7 +750,11 @@ function LinkSection({
                       return;
                     }
                     await del.mutateAsync(l.id);
-                    setLinks((current) => current.filter((item) => item.id !== l.id));
+                    if (setPendingLinks) {
+                      setPendingLinks((current) => current.filter((item) => item.id !== l.id));
+                    } else {
+                      setLinks((current) => current.filter((item) => item.id !== l.id));
+                    }
                   } catch (err) {
                     setError((err as Error).message);
                   }

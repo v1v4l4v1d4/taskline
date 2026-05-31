@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
   type Dispatch,
+  type PointerEvent as ReactPointerEvent,
   type SetStateAction,
 } from "react";
 import { FileCode2, ImagePlus, Trash2, X } from "lucide-react";
@@ -410,9 +411,18 @@ function ImageSection({
   const [images, setImages] = useState<TaskImage[]>(task.images ?? []);
   const displayedImages = pendingImages ?? images;
   const [previewImage, setPreviewImage] = useState<DisplayImage | null>(null);
+  const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+  const [previewDragging, setPreviewDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const draftPreviewURLsRef = useRef<Set<string>>(new Set());
+  const previewDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
   const upload = useUploadImage(project.id);
   const del = useDeleteImage(project.id);
 
@@ -432,6 +442,9 @@ function ImageSection({
 
   useEffect(() => {
     if (!previewImage) return;
+    setPreviewOffset({ x: 0, y: 0 });
+    setPreviewDragging(false);
+    previewDragRef.current = null;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -441,6 +454,41 @@ function ImageSection({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [previewImage]);
+
+  const startPreviewDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    previewDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: previewOffset.x,
+      originY: previewOffset.y,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setPreviewDragging(true);
+  };
+
+  const movePreviewDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
+    const drag = previewDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPreviewOffset({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    });
+  };
+
+  const stopPreviewDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
+    const drag = previewDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    previewDragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setPreviewDragging(false);
+  };
 
   const appendImage = useCallback((image: TaskImage) => {
     setImages((current) =>
@@ -606,36 +654,50 @@ function ImageSection({
           role="dialog"
           aria-modal="true"
           aria-label="Image preview"
-          className="fixed inset-0 z-50 bg-black/60 p-5 flex items-center justify-center"
+          className="fixed inset-0 z-50 bg-slate-950/90 text-white flex items-center justify-center overflow-hidden"
           onClick={(event) => {
             if (event.target === event.currentTarget) setPreviewImage(null);
           }}
         >
-          <div className="max-w-[min(960px,92vw)] max-h-[90vh] rounded bg-white shadow-xl flex flex-col overflow-hidden">
-            <div className="h-10 px-3 border-b flex items-center gap-3">
-              <p className="text-sm font-medium text-slate-700 truncate flex-1 min-w-0">
-                {previewImage.filename}
-              </p>
-              <button
-                type="button"
-                aria-label="Close image preview"
-                className="h-7 w-7 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center"
-                onClick={() => setPreviewImage(null)}
-              >
-                <X size={15} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="bg-slate-950 p-2 flex items-center justify-center">
-              <img
-                alt={previewImage.filename}
-                src={
-                  previewImage.pending
-                    ? previewImage.preview_url ?? ""
-                    : taskImageURL(previewImage.id)
-                }
-                className="max-w-[88vw] max-h-[78vh] object-contain"
-              />
-            </div>
+          <div className="absolute top-3 left-3 right-3 z-10 h-10 rounded bg-black/40 px-3 shadow-lg backdrop-blur flex items-center gap-3">
+            <p className="text-sm font-medium text-white truncate flex-1 min-w-0">
+              {previewImage.filename}
+            </p>
+            <button
+              type="button"
+              aria-label="Close image preview"
+              className="h-7 w-7 rounded text-white/70 hover:bg-white/10 hover:text-white flex items-center justify-center"
+              onClick={() => setPreviewImage(null)}
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <div
+            className="h-full w-full p-4 pt-16 flex items-center justify-center"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setPreviewImage(null);
+            }}
+          >
+            <img
+              alt={previewImage.filename}
+              src={
+                previewImage.pending
+                  ? previewImage.preview_url ?? ""
+                  : taskImageURL(previewImage.id)
+              }
+              draggable={false}
+              className={
+                "max-w-[calc(100vw-2rem)] max-h-[calc(100vh-6rem)] object-contain select-none will-change-transform " +
+                (previewDragging ? "cursor-grabbing" : "cursor-grab")
+              }
+              style={{
+                transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0)`,
+              }}
+              onPointerDown={startPreviewDrag}
+              onPointerMove={movePreviewDrag}
+              onPointerUp={stopPreviewDrag}
+              onPointerCancel={stopPreviewDrag}
+            />
           </div>
         </div>
       )}

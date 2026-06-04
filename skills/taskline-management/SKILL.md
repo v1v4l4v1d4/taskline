@@ -60,10 +60,11 @@ no additional instruction, treat that as "work the current project's
 runnable queue": resolve the project from `--project`, `$TASKLINE_PROJECT`,
 or the current repository name when it is unambiguous. If the project
 cannot be resolved, ask only for the project name. Once a project is
-known, keep pulling `taskline task next --format json` after each
-completed task until it returns the literal `null`. Do not stop after
-one task or one PR unless the runnable queue is exhausted or a real
-blocker prevents progress.
+known, export `TASKLINE_PROJECT` for the session or pass `--project`
+on every project-scoped command, then keep pulling
+`taskline task next --format json` after each completed task until it
+returns the literal `null`. Do not stop after one task or one PR unless
+the runnable queue is exhausted or a real blocker prevents progress.
 
 Skip taskline when the user just wants a one-line note, a scratch
 todo, or an answer that doesn't survive past this turn — reply
@@ -382,7 +383,7 @@ one-line message. The state machine still records what happened.
   left is parked in `pending`. Run
   `taskline task list --project <p> --state pending,start,spec,dev,review`
   to see what's stuck and why. Do not automatically move `pending`
-  tasks into `start`; promote them only when the task itself or the
-  user makes clear that they are ready to run.
+  tasks into `start`; promote them only when the task description,
+  dependencies, or the user makes clear that they are ready to run.
 - **The user said "remind me to X"** — that's a one-off note, not a
   task. Reply directly; don't create a taskline entry.

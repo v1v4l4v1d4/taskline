@@ -107,6 +107,11 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 2
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[start-local] curl is required to run health checks" >&2
+    exit 2
+fi
+
 # Launch detached from this shell's process group. `nohup ... & disown` works
 # in an interactive terminal, but some agent/CI command runners clean up the
 # whole process group after the parent shell exits. Python's start_new_session
@@ -127,6 +132,11 @@ proc = subprocess.Popen(
 print(proc.pid)
 PY
 )"
+
+if [[ -z "$SERVER_PID" ]] || ! [[ "$SERVER_PID" =~ ^[0-9]+$ ]]; then
+    echo "[start-local] failed to launch server via python3" >&2
+    exit 1
+fi
 
 HEALTH_URL="http://127.0.0.1:${PORT}/healthz"
 READY=""

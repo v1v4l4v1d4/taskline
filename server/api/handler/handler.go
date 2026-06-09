@@ -428,12 +428,9 @@ func (h *Handler) getDocContent(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	if _, err := os.Stat(doc.StoragePath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			writeServiceError(c, fmt.Errorf("%w: doc file missing", store.ErrNotFound))
-			return
-		}
-		writeError(c, http.StatusInternalServerError, err)
+	content, err := h.readDocContent(doc)
+	if err != nil {
+		writeServiceError(c, err)
 		return
 	}
 	c.SetStatusCode(http.StatusOK)
@@ -441,7 +438,7 @@ func (h *Handler) getDocContent(ctx context.Context, c *app.RequestContext) {
 	c.Response.Header.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{
 		"filename": doc.ID + ".md",
 	}))
-	c.File(doc.StoragePath)
+	c.Write(content)
 }
 
 type updateDocReq struct {
@@ -470,18 +467,28 @@ func (h *Handler) updateDoc(ctx context.Context, c *app.RequestContext) {
 		}
 		u.Title = &title
 	}
+	var tempPath string
 	if req.Content != nil {
-		if err := os.WriteFile(doc.StoragePath, []byte(*req.Content), 0o600); err != nil {
+		tempPath, err = h.writeDocContentTemp(doc, *req.Content)
+		if err != nil {
 			writeError(c, http.StatusInternalServerError, err)
 			return
 		}
 	}
 	updated, err := h.svc.UpdateDoc(ctx, id, u)
 	if err != nil {
+		if tempPath != "" {
+			_ = os.Remove(tempPath)
+		}
 		writeServiceError(c, err)
 		return
 	}
 	if req.Content != nil {
+		if err := os.Rename(tempPath, doc.StoragePath); err != nil {
+			_ = os.Remove(tempPath)
+			writeError(c, http.StatusInternalServerError, err)
+			return
+		}
 		updated.Content = *req.Content
 	} else if content, err := h.readDocContent(updated); err != nil {
 		writeServiceError(c, err)
@@ -724,4 +731,30 @@ func (h *Handler) readDocContent(doc *model.Doc) ([]byte, error) {
 		return nil, err
 	}
 	return content, nil
+}
+
+func (h *Handler) writeDocContentTemp(doc *model.Doc, content string) (string, error) {
+	dir := filepath.Dir(doc.StoragePath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	temp, err := os.CreateTemp(dir, filepath.Base(doc.StoragePath)+".*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tempPath := temp.Name()
+	if _, err := temp.WriteString(content); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+		return "", err
+	}
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return "", err
+	}
+	if err := os.Chmod(tempPath, 0o600); err != nil {
+		_ = os.Remove(tempPath)
+		return "", err
+	}
+	return tempPath, nil
 }

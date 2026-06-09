@@ -2,6 +2,9 @@
 -- stage between dev and review. SQLite cannot alter a CHECK constraint in
 -- place, so this mirrors the table-swap pattern from earlier state-set
 -- migrations.
+-- Keep this migration text identical in server/migrations/ and
+-- server/internal/store/schema/: the former is external migration history,
+-- and the latter is embedded into the binary for fresh database creation.
 
 PRAGMA defer_foreign_keys = ON;
 

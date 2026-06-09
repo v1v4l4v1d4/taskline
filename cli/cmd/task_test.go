@@ -6,7 +6,11 @@ import (
 )
 
 func TestTaskUpdateStateHelpMentionsTest(t *testing.T) {
-	usage := taskUpdateCmd.Flag("state").Usage
+	flag := taskUpdateCmd.Flag("state")
+	if flag == nil {
+		t.Fatal("state flag not found on taskUpdateCmd")
+	}
+	usage := flag.Usage
 	if !strings.Contains(usage, "test") {
 		t.Fatalf("state help %q does not mention test", usage)
 	}

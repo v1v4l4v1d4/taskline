@@ -98,6 +98,19 @@ describe("TaskCard", () => {
     expect(review?.getAttribute("data-label-theme")).toBe("amber");
   });
 
+  it("renders docs tasks with a distinct type accent", () => {
+    renderCard(vi.fn(), vi.fn(), {
+      ...task,
+      type: "docs",
+      title: "Update docs",
+    });
+
+    const card = screen.getByRole("button", { name: /open task update docs/i });
+
+    expect(screen.getByText("docs")).toBeTruthy();
+    expect(card.className).toContain("border-l-violet-500");
+  });
+
   it("deletes from the card icon without opening the editor", async () => {
     const user = userEvent.setup();
     const confirm = vi.fn(() => true);

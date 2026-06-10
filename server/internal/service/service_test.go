@@ -74,6 +74,17 @@ func TestUpdateTaskRejectsUnknownState(t *testing.T) {
 	require.True(t, strings.Contains(err.Error(), "invalid"))
 }
 
+func TestCreateTaskAcceptsDocsType(t *testing.T) {
+	ctx := context.Background()
+	s := newSvc(t)
+	p, _ := s.CreateProject(ctx, "p", "")
+
+	tk, err := s.CreateTask(ctx, p.ID, "refresh docs", "", model.TaskTypeDocs, 0, true)
+	require.NoError(t, err)
+	require.Equal(t, model.TaskTypeDocs, tk.Type)
+	require.Equal(t, model.StateStart, tk.State)
+}
+
 func TestNextRunnableTaskReturnsNilWhenNothingRunnable(t *testing.T) {
 	ctx := context.Background()
 	s := newSvc(t)

@@ -56,6 +56,7 @@ cp .env.example .env       # only needed first time
 export TASKLINE_PROJECT=demo
 ./dist/taskline project create --name demo --description "first one"
 ./dist/taskline task create --title "first task" --type feature --priority 1 --label onboarding
+# --type accepts feature, bug, or docs
 ./dist/taskline task doc create <task-id> --title Spec --file ./spec.md
 ./dist/taskline task list
 ./dist/taskline task next

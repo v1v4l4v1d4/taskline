@@ -311,6 +311,7 @@ export function TaskEditor({
               >
                 <option value="feature">feature</option>
                 <option value="bug">bug</option>
+                <option value="docs">docs</option>
               </select>
             </label>
             <label className="text-xs space-y-1">

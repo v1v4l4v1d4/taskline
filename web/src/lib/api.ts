@@ -30,7 +30,7 @@ export const STATE_LABELS: Record<TaskState, string> = {
   done: "Done",
 };
 
-export type TaskType = "feature" | "bug";
+export type TaskType = "feature" | "bug" | "docs";
 
 export interface Project {
   id: string;

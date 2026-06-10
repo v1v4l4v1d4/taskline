@@ -46,7 +46,7 @@ func init() {
 
 	taskCreateCmd.Flags().String("title", "", "task title (required)")
 	taskCreateCmd.Flags().String("description", "", "task description")
-	taskCreateCmd.Flags().String("type", "feature", "task type: feature|bug")
+	taskCreateCmd.Flags().String("type", "feature", "task type: feature|bug|docs")
 	taskCreateCmd.Flags().Int("priority", 0, "task priority (higher = runs sooner)")
 	taskCreateCmd.Flags().StringArray("label", nil, "task label (repeatable)")
 	taskCreateCmd.Flags().Bool("auto-start", true, "start the task immediately ('start'); pass --auto-start=false to park it as 'pending'")
@@ -56,7 +56,7 @@ func init() {
 
 	taskUpdateCmd.Flags().String("title", "", "new title")
 	taskUpdateCmd.Flags().String("description", "", "new description")
-	taskUpdateCmd.Flags().String("type", "", "new type: feature|bug")
+	taskUpdateCmd.Flags().String("type", "", "new type: feature|bug|docs")
 	taskUpdateCmd.Flags().String("state", "", "new state: pending|start|spec|dev|test|review|done")
 	taskUpdateCmd.Flags().Int("priority", 0, "new priority")
 	taskUpdateCmd.Flags().StringArray("label", nil, "replace task labels (repeatable)")

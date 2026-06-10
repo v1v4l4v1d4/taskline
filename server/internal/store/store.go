@@ -183,6 +183,9 @@ func normalizeLabels(labels []string) ([]string, error) {
 		if label == "" {
 			return nil, errors.New("label cannot be blank")
 		}
+		if strings.ContainsAny(label, ",\t\n\r") {
+			return nil, fmt.Errorf("label %q cannot contain commas, tabs, or newlines", label)
+		}
 		if utf8.RuneCountInString(label) > maxTaskLabelRunes {
 			return nil, fmt.Errorf("label %q is too long: max %d characters", label, maxTaskLabelRunes)
 		}

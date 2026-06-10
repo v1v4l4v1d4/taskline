@@ -488,6 +488,10 @@ func TestTaskLabelsAtAPI(t *testing.T) {
 	st = jsonReq(t, "PATCH", base+"/api/v1/tasks/"+tk.ID,
 		map[string]any{"labels": []string{"ok", " "}}, nil)
 	require.Equal(t, http.StatusBadRequest, st)
+
+	st = jsonReq(t, "PATCH", base+"/api/v1/tasks/"+tk.ID,
+		map[string]any{"labels": []string{"ok", "bad,label"}}, nil)
+	require.Equal(t, http.StatusBadRequest, st)
 }
 
 func TestTaskLinkLifecycleAtAPI(t *testing.T) {

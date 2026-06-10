@@ -320,6 +320,24 @@ describe("TaskEditor create attachments", () => {
     );
   });
 
+  it("enforces label input limits in the editor", async () => {
+    const user = userEvent.setup();
+    const labels = Array.from({ length: 19 }, (_, index) => `label-${index + 1}`);
+    renderEditor(vi.fn(), { ...task, labels });
+
+    const input = screen.getByLabelText("New label") as HTMLInputElement;
+    expect(input.maxLength).toBe(64);
+    expect(input.disabled).toBe(false);
+    expect(input.placeholder).toBe("Type a label and press Enter or comma");
+
+    await user.type(input, "last{enter}");
+
+    expect(screen.getByText("last")).toBeTruthy();
+    const fullInput = screen.getByLabelText("New label") as HTMLInputElement;
+    expect(fullInput.disabled).toBe(true);
+    expect(fullInput.placeholder).toBe("Maximum of 20 labels reached");
+  });
+
   it("retries failed staged operations without duplicating successful work", async () => {
     const user = userEvent.setup();
     const created: Task = {

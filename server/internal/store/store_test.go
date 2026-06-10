@@ -153,6 +153,16 @@ func TestTaskLabels(t *testing.T) {
 	blankLabels := []string{"ok", " "}
 	_, err = st.UpdateTask(ctx, tk.ID, store.TaskUpdate{Labels: &blankLabels})
 	require.Error(t, err)
+
+	for _, labels := range [][]string{
+		{"bad,label"},
+		{"bad\tlabel"},
+		{"bad\nlabel"},
+		{"bad\rlabel"},
+	} {
+		_, err = st.UpdateTask(ctx, tk.ID, store.TaskUpdate{Labels: &labels})
+		require.Error(t, err)
+	}
 }
 
 func TestDependencyCycleProtection(t *testing.T) {

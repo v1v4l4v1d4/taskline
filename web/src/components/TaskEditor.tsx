@@ -422,6 +422,9 @@ type DocDialogState = {
   content: string;
 };
 
+const MAX_TASK_LABELS = 20;
+const MAX_TASK_LABEL_LENGTH = 64;
+
 function LabelSection({
   labels,
   setLabels,
@@ -435,6 +438,7 @@ function LabelSection({
     const label = draft.trim();
     if (!label) return;
     setLabels((current) => {
+      if (current.length >= MAX_TASK_LABELS) return current;
       const exists = current.some((item) => item.toLowerCase() === label.toLowerCase());
       return exists ? current : [...current, label];
     });
@@ -481,6 +485,13 @@ function LabelSection({
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={onKeyDown}
+        maxLength={MAX_TASK_LABEL_LENGTH}
+        disabled={labels.length >= MAX_TASK_LABELS}
+        placeholder={
+          labels.length >= MAX_TASK_LABELS
+            ? "Maximum of 20 labels reached"
+            : "Type a label and press Enter or comma"
+        }
       />
     </div>
   );

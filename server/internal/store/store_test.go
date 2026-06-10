@@ -58,6 +58,10 @@ func TestTaskCreateAndState(t *testing.T) {
 	require.Equal(t, model.StateStart, tk.State)
 	require.Equal(t, model.TaskTypeFeature, tk.Type)
 
+	docs, err := st.CreateTask(ctx, p.ID, "docs", "update docs", model.TaskTypeDocs, 0, model.StateStart)
+	require.NoError(t, err)
+	require.Equal(t, model.TaskTypeDocs, docs.Type)
+
 	// Tasks created in pending preserve that state.
 	tkPending, err := st.CreateTask(ctx, p.ID, "later", "", model.TaskTypeFeature, 0, model.StatePending)
 	require.NoError(t, err)
@@ -112,6 +116,11 @@ func TestUpdateTaskAndDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "renamed", got.Title)
 	require.Equal(t, 7, got.Priority)
+
+	newType := model.TaskTypeDocs
+	got, err = st.UpdateTask(ctx, tk.ID, store.TaskUpdate{Type: &newType})
+	require.NoError(t, err)
+	require.Equal(t, model.TaskTypeDocs, got.Type)
 
 	require.NoError(t, st.DeleteTask(ctx, tk.ID))
 	require.True(t, errors.Is(st.DeleteTask(ctx, tk.ID), store.ErrNotFound))
@@ -407,7 +416,7 @@ func TestMigrationsRunOnceAcrossReopens(t *testing.T) {
 
 	v1, err := readUserVersion(path)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, v1, 6, "first open should advance to >=6")
+	require.GreaterOrEqual(t, v1, 9, "first open should advance to >=9")
 
 	require.NoError(t, st1.Close())
 
@@ -418,6 +427,97 @@ func TestMigrationsRunOnceAcrossReopens(t *testing.T) {
 	v2, err := readUserVersion(path)
 	require.NoError(t, err)
 	require.Equal(t, v1, v2, "re-opening must not change user_version")
+}
+
+func TestMigrationAddsDocsTypeWithoutDroppingTaskChildren(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "taskline.db")
+
+	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	_, err = raw.ExecContext(ctx, `
+		CREATE TABLE projects(
+		    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+		    description TEXT NOT NULL DEFAULT '',
+		    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+		CREATE TABLE tasks(
+		    id TEXT PRIMARY KEY,
+		    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+		    title TEXT NOT NULL,
+		    description TEXT NOT NULL DEFAULT '',
+		    type TEXT NOT NULL CHECK (type IN ('feature','bug')),
+		    state TEXT NOT NULL CHECK (state IN ('pending','start','spec','dev','test','review','done')),
+		    priority INTEGER NOT NULL DEFAULT 0,
+		    labels TEXT NOT NULL DEFAULT '[]',
+		    created_at INTEGER NOT NULL,
+		    updated_at INTEGER NOT NULL);
+		CREATE TABLE task_deps(
+		    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    created_at INTEGER NOT NULL,
+		    PRIMARY KEY(task_id, depends_on_task_id),
+		    CHECK(task_id <> depends_on_task_id));
+		CREATE TABLE task_images(
+		    id TEXT PRIMARY KEY,
+		    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    filename TEXT NOT NULL,
+		    mime_type TEXT NOT NULL,
+		    size_bytes INTEGER NOT NULL,
+		    storage_path TEXT NOT NULL,
+		    uploaded_at INTEGER NOT NULL);
+		CREATE TABLE task_docs(
+		    id TEXT PRIMARY KEY,
+		    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    title TEXT NOT NULL,
+		    storage_path TEXT NOT NULL,
+		    created_at INTEGER NOT NULL,
+		    updated_at INTEGER NOT NULL);
+		CREATE TABLE task_links(
+		    id TEXT PRIMARY KEY,
+		    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+		    url TEXT NOT NULL,
+		    label TEXT NOT NULL DEFAULT '',
+		    created_at INTEGER NOT NULL);
+		INSERT INTO projects(id,name,description,created_at,updated_at)
+		    VALUES ('p1','demo','',0,0);
+		INSERT INTO tasks(id,project_id,title,type,state,priority,labels,created_at,updated_at)
+		    VALUES ('a','p1','dependency','feature','done',1,'[]',0,0),
+		           ('b','p1','with children','bug','start',2,'["docs","ui"]',0,0);
+		INSERT INTO task_deps(task_id,depends_on_task_id,created_at) VALUES ('b','a',0);
+		INSERT INTO task_images(id,task_id,filename,mime_type,size_bytes,storage_path,uploaded_at)
+		    VALUES ('img1','b','diagram.png','image/png',12,'images/diagram.png',0);
+		INSERT INTO task_docs(id,task_id,title,storage_path,created_at,updated_at)
+		    VALUES ('doc1','b','Plan','docs/plan.md',0,0);
+		INSERT INTO task_links(id,task_id,url,label,created_at)
+		    VALUES ('link1','b','https://example.com','Example',0);
+		PRAGMA user_version = 8;
+	`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	st, err := store.New(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	v, err := readUserVersion(path)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, v, 9)
+
+	got, err := st.GetTask(ctx, "b")
+	require.NoError(t, err)
+	require.Equal(t, []string{"docs", "ui"}, got.Labels)
+	require.Equal(t, []string{"a"}, got.DependsOn)
+	require.Len(t, got.Images, 1)
+	require.Equal(t, "img1", got.Images[0].ID)
+	require.Len(t, got.Docs, 1)
+	require.Equal(t, "doc1", got.Docs[0].ID)
+	require.Len(t, got.Links, 1)
+	require.Equal(t, "link1", got.Links[0].ID)
+
+	docs, err := st.CreateTask(ctx, "p1", "docs task", "", model.TaskTypeDocs, 0, model.StateStart)
+	require.NoError(t, err)
+	require.Equal(t, model.TaskTypeDocs, docs.Type)
 }
 
 // TestMigrationUpgradesCreatedAndDesignRows catches the failure mode
@@ -476,7 +576,7 @@ func TestMigrationUpgradesCreatedAndDesignRows(t *testing.T) {
 
 	v, err := readUserVersion(path)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, v, 6, "migration should have run at least through 0006")
+	require.GreaterOrEqual(t, v, 9, "migration should have run at least through 0009")
 
 	// The legacy 'created' row was renamed to 'start' during the swap.
 	ta, err := st.GetTask(ctx, "a")
@@ -502,6 +602,10 @@ func TestMigrationUpgradesCreatedAndDesignRows(t *testing.T) {
 		require.NotEqual(t, "a", task.ID)
 		require.Empty(t, task.DependsOn, "task_deps row should have cascaded")
 	}
+
+	docs, err := st.CreateTask(ctx, "p1", "docs", "", model.TaskTypeDocs, 0, model.StateStart)
+	require.NoError(t, err)
+	require.Equal(t, model.TaskTypeDocs, docs.Type)
 }
 
 // readUserVersion opens a side-channel SQL handle to inspect the

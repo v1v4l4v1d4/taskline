@@ -2,7 +2,7 @@
 name: taskline-management
 description: |
   Use whenever the user wants to track agent work as structured tasks
-  inside a project — capturing a feature or bug, sequencing dependent
+  inside a project — capturing a feature, bug, or docs task, sequencing dependent
   work, picking the next thing to pull, advancing a task through the
   pending → start → spec → dev → test → review → done lifecycle, recording
   progress, or asking "what's left?". Trigger phrases include "create
@@ -16,13 +16,13 @@ description: |
   project queue" and proactively drain runnable tasks to completion.
   Skip for one-off todo notes with no state, dependencies, or follow-up
   — just answer those directly.
-version: 0.9.0
+version: 0.10.0
 ---
 
 # taskline — task management for AI agents
 
 The `taskline` CLI is your only interface to taskline. It tracks
-projects and the tasks (features / bugs) inside them, enforces a
+projects and the tasks (features / bugs / docs) inside them, enforces a
 seven-state lifecycle (`pending → start → spec → dev → test → review → done`),
 models inter-task dependencies as a DAG, and answers "what's runnable
 now?".
@@ -90,7 +90,7 @@ focused on a single project.
 | `project_id`  | UUID of owning project                                                     |
 | `title`       | required, short                                                            |
 | `description` | optional, longer prose                                                     |
-| `type`        | `feature` (default) or `bug`                                               |
+| `type`        | `feature` (default), `bug`, or `docs`                                      |
 | `state`       | `pending`, `start`, `spec`, `dev`, `test`, `review`, `done`                |
 | `priority`    | integer; **higher = runs sooner** (default 0)                              |
 | `labels`      | task-local GitHub-style text labels, ordered and deduped by the server     |

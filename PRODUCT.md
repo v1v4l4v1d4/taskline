@@ -36,7 +36,7 @@ DAG, a priority field, and a JSON-first CLI.
 
 The CLI defaults to JSON output when stdout isn't a TTY. Exit codes are
 stable. Diagnostics go to stderr. The server's contract is small enough
-to memorize: seven states, two task types, one priority integer, one
+to memorize: seven states, three task types, one priority integer, one
 edge type. A human-friendly UI exists, but it's a *visualization* layer
 on top of the agent contract — never the source of truth.
 

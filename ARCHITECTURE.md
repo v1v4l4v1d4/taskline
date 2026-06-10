@@ -71,7 +71,7 @@ once and passed through to the handler (for `ImagesDir` and `DocsDir`).
 ```sql
 projects(id, name UNIQUE, description, created_at, updated_at)
 tasks   (id, project_id → projects.id, title, description,
-         type ∈ {feature,bug},
+         type ∈ {feature,bug,docs},
          state ∈ {pending,start,spec,dev,test,review,done}, priority,
          labels JSON string array,
          created_at, updated_at)

@@ -42,6 +42,9 @@ var schemaTaskDocs string
 //go:embed schema/0008_task_labels.sql
 var schemaTaskLabels string
 
+//go:embed schema/0009_docs_task_type.sql
+var schemaDocsTaskType string
+
 // schemaMigrations defines the canonical migration set, keyed by
 // monotonically increasing version. We track the last-applied version in
 // SQLite's built-in `PRAGMA user_version` and only run migrations whose
@@ -62,6 +65,7 @@ var schemaMigrations = []migration{
 	{version: 6, sql: schemaAddTestState},
 	{version: 7, sql: schemaTaskDocs},
 	{version: 8, sql: schemaTaskLabels},
+	{version: 9, sql: schemaDocsTaskType},
 }
 
 // ErrNotFound is returned when a lookup misses.

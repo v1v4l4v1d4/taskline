@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 func TestTaskUpdateStateHelpMentionsTest(t *testing.T) {
@@ -13,6 +15,24 @@ func TestTaskUpdateStateHelpMentionsTest(t *testing.T) {
 	usage := flag.Usage
 	if !strings.Contains(usage, "test") {
 		t.Fatalf("state help %q does not mention test", usage)
+	}
+}
+
+func TestTaskTypeHelpMentionsDocs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cmd  interface{ Flag(string) *pflag.Flag }
+	}{
+		{name: "create", cmd: taskCreateCmd},
+		{name: "update", cmd: taskUpdateCmd},
+	} {
+		flag := tc.cmd.Flag("type")
+		if flag == nil {
+			t.Fatalf("type flag not found on task %s command", tc.name)
+		}
+		if !strings.Contains(flag.Usage, "docs") {
+			t.Fatalf("task %s type help %q does not mention docs", tc.name, flag.Usage)
+		}
 	}
 }
 

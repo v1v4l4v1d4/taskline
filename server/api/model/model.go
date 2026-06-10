@@ -8,11 +8,12 @@ type TaskType string
 const (
 	TaskTypeFeature TaskType = "feature"
 	TaskTypeBug     TaskType = "bug"
+	TaskTypeDocs    TaskType = "docs"
 )
 
 func (t TaskType) Valid() bool {
 	switch t {
-	case TaskTypeFeature, TaskTypeBug:
+	case TaskTypeFeature, TaskTypeBug, TaskTypeDocs:
 		return true
 	}
 	return false

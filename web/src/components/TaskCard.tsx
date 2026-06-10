@@ -44,7 +44,9 @@ export function TaskCard({ task, isBlocked, onClick, onDelete, overlay = false }
   const typeColor =
     task.type === "bug"
       ? "border-l-red-500"
-      : "border-l-sky-500";
+      : task.type === "docs"
+        ? "border-l-violet-500"
+        : "border-l-sky-500";
 
   // While the real card is being dragged, fade it almost-out so the
   // overlay clone is what the eye tracks. Without this, you'd see

@@ -212,6 +212,33 @@ func TestEndToEndHappyPath(t *testing.T) {
 	require.Equal(t, t1.ID, allTasks.Tasks[0].ID)
 }
 
+func TestDocsTaskTypeRoundTrip(t *testing.T) {
+	base, stop := startServer(t)
+	defer stop()
+
+	var p project
+	st := jsonReq(t, "POST", base+"/api/v1/projects",
+		map[string]any{"name": "docsproj"}, &p)
+	require.Equal(t, http.StatusCreated, st)
+
+	var created task
+	st = jsonReq(t, "POST", base+"/api/v1/projects/docsproj/tasks",
+		map[string]any{"title": "refresh docs", "type": "docs", "auto_start": true}, &created)
+	require.Equal(t, http.StatusCreated, st)
+	require.Equal(t, "docs", created.Type)
+
+	var updated task
+	st = jsonReq(t, "PATCH", base+"/api/v1/tasks/"+created.ID,
+		map[string]any{"type": "docs"}, &updated)
+	require.Equal(t, http.StatusOK, st)
+	require.Equal(t, "docs", updated.Type)
+
+	var got task
+	st = jsonReq(t, "GET", base+"/api/v1/tasks/"+created.ID, nil, &got)
+	require.Equal(t, http.StatusOK, st)
+	require.Equal(t, "docs", got.Type)
+}
+
 func TestImageUploadEndToEnd(t *testing.T) {
 	base, stop := startServer(t)
 	defer stop()

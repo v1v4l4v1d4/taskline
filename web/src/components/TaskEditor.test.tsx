@@ -320,6 +320,54 @@ describe("TaskEditor create attachments", () => {
     );
   });
 
+  it("offers docs as a task type and submits it in the create payload", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const created: Task = {
+      ...task,
+      id: "task-docs",
+      title: "Refresh docs",
+      type: "docs",
+    };
+    const fetchMock = vi.fn((url: string | URL | Request, _init?: RequestInit) => {
+      const path = String(url);
+      if (path === "/api/v1/projects/project-1/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(created), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unexpected ${path}` }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderCreateEditor(onClose);
+
+    expect(screen.getByRole("option", { name: "docs" })).toBeTruthy();
+
+    await user.type(screen.getByLabelText("Title"), created.title);
+    await user.selectOptions(screen.getByLabelText("Type"), "docs");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0][1]?.body).toBe(
+      JSON.stringify({
+        title: created.title,
+        description: "",
+        type: "docs",
+        priority: 0,
+        labels: [],
+        auto_start: true,
+      })
+    );
+  });
+
   it("adds a common label from the dropdown while keeping free text labels", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

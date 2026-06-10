@@ -53,7 +53,7 @@ func (s *Service) CreateTask(ctx context.Context, projectIDOrName, title, descri
 		return nil, errors.New("task title required")
 	}
 	if !taskType.Valid() {
-		return nil, fmt.Errorf("invalid task type %q (must be feature or bug)", taskType)
+		return nil, fmt.Errorf("invalid task type %q (must be feature, bug, or docs)", taskType)
 	}
 	p, err := s.ResolveProject(ctx, projectIDOrName)
 	if err != nil {

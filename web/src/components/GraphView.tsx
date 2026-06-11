@@ -26,9 +26,12 @@ import {
 import {
   useAddDependency,
   useDeleteDependency,
+  useDeleteTask,
   useTasks,
   useUpdateTask,
 } from "../hooks/queries";
+import { createTaskCopyDraft } from "../lib/taskActions";
+import { TaskContextMenu } from "./TaskContextMenu";
 import { TaskEditor } from "./TaskEditor";
 
 const ACTIVE_EDGE_COLOR = "#0f172a";
@@ -65,6 +68,11 @@ type TaskEdgeData = {
   onDelete: () => void;
 };
 type TaskGraphEdge = Edge<TaskEdgeData, "deletableEdge">;
+type TaskMenuState = {
+  task: Task;
+  x: number;
+  y: number;
+};
 
 const STATE_ORDER = new Map<TaskState, number>(
   STATES.map((state, index) => [state, index])
@@ -75,9 +83,13 @@ export function GraphView({ project }: Props) {
   const updateTask = useUpdateTask(project.id);
   const addDependency = useAddDependency(project.id);
   const deleteDependency = useDeleteDependency(project.id);
+  const deleteTask = useDeleteTask(project.id);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
+  const [copyDraft, setCopyDraft] = useState<Task | null>(null);
+  const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const pendingTaskOpenTimer = useRef<number | null>(null);
   const tasks = useMemo(() => tasksQ.data ?? [], [tasksQ.data]);
 
@@ -117,6 +129,11 @@ export function GraphView({ project }: Props) {
     },
     [addDependency, tasks]
   );
+
+  const showMutationError = useCallback((err: unknown) => {
+    setError(err instanceof Error ? err.message : "Task update failed");
+    setTimeout(() => setError(null), 5000);
+  }, []);
 
   const { nodes, edges } = useMemo(() => {
     const colSpacing = 260;
@@ -208,7 +225,15 @@ export function GraphView({ project }: Props) {
   }, [deleteDependency, selectedEdgeId, selectedTaskId, tasks, updateTask]);
 
   return (
-    <div className="flex-1 h-full">
+    <div className="relative flex-1 h-full">
+      {error && (
+        <div
+          role="alert"
+          className="absolute left-4 right-4 top-4 z-20 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 shadow-sm"
+        >
+          {error}
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -222,6 +247,7 @@ export function GraphView({ project }: Props) {
           setSelectedEdgeId(edge.id);
         }}
         onNodeClick={(_, node) => {
+          setTaskMenu(null);
           setSelectedTaskId(null);
           setSelectedEdgeId(null);
           scheduleTaskOpen(node.data.task);
@@ -232,8 +258,17 @@ export function GraphView({ project }: Props) {
           setSelectedTaskId(node.id);
           setSelectedEdgeId(null);
         }}
+        onNodeContextMenu={(event, node) => {
+          event.preventDefault();
+          event.stopPropagation();
+          clearPendingTaskOpen();
+          setSelectedTaskId(null);
+          setSelectedEdgeId(null);
+          setTaskMenu({ task: node.data.task, x: event.clientX, y: event.clientY });
+        }}
         onPaneClick={() => {
           clearPendingTaskOpen();
+          setTaskMenu(null);
           setSelectedTaskId(null);
           setSelectedEdgeId(null);
         }}
@@ -249,6 +284,28 @@ export function GraphView({ project }: Props) {
           task={editing}
           allTasks={tasks}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {copyDraft && (
+        <TaskEditor
+          project={project}
+          task={copyDraft}
+          allTasks={tasks}
+          mode="create"
+          onClose={() => setCopyDraft(null)}
+        />
+      )}
+      {taskMenu && (
+        <TaskContextMenu
+          task={taskMenu.task}
+          position={{ x: taskMenu.x, y: taskMenu.y }}
+          onClose={() => setTaskMenu(null)}
+          onCopy={(task) => setCopyDraft(createTaskCopyDraft(task))}
+          onDelete={(task) => {
+            deleteTask.mutate(task.id, { onError: showMutationError });
+            setSelectedTaskId(null);
+            setSelectedEdgeId(null);
+          }}
         />
       )}
     </div>

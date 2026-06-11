@@ -60,6 +60,18 @@ function canStartBoardPan(target: EventTarget | null) {
   return target instanceof Element && !target.closest(BOARD_PAN_BLOCK_SELECTOR);
 }
 
+function isScrollbarPointer(event: React.PointerEvent<HTMLDivElement>) {
+  const el = event.currentTarget;
+  const rect = el.getBoundingClientRect();
+  const horizontalScrollbarHeight = el.offsetHeight - el.clientHeight;
+  const verticalScrollbarWidth = el.offsetWidth - el.clientWidth;
+  return (
+    (horizontalScrollbarHeight > 0 &&
+      event.clientY >= rect.bottom - horizontalScrollbarHeight) ||
+    (verticalScrollbarWidth > 0 && event.clientX >= rect.right - verticalScrollbarWidth)
+  );
+}
+
 export function KanbanBoard({ project }: Props) {
   const tasksQ = useTasks(project.id);
   const updateTask = useUpdateTask(project.id);
@@ -146,7 +158,14 @@ export function KanbanBoard({ project }: Props) {
   }
 
   function startBoardPan(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !canStartBoardPan(event.target)) return;
+    if (
+      event.button !== 0 ||
+      event.pointerType !== "mouse" ||
+      isScrollbarPointer(event) ||
+      !canStartBoardPan(event.target)
+    ) {
+      return;
+    }
     boardPan.current = {
       pointerId: event.pointerId,
       startX: event.clientX,

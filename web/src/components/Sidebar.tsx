@@ -94,9 +94,6 @@ export function Sidebar({ selectedId, onSelect }: Props) {
           })}
         </ul>
       </nav>
-      <p className="text-[10px] text-slate-400 mt-2">
-        polling every 10s · drag cards between columns to advance state
-      </p>
     </aside>
   );
 }

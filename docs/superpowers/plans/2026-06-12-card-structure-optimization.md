@@ -16,35 +16,34 @@ task content.
 
 ## Product Requirements
 
-- Render `p n` and `deps n` as floating corner badges pinned to the card's top
-  edge, similar to small product promotion tags.
+- Render `p n` and `deps n` as leading chips in the card's label area instead of
+  floating corner badges.
 - Remove `=` from the priority badge text.
 - Let the title fill the card content width, except normal card padding.
 - Do not render `links n`, image count, or document count on the card.
 - Keep labels smaller and denser.
-- Labels should use one row only; when there are more labels than fit the fixed
+- Labels should use at most two rows; when there are more labels than the fixed
   visible count, continue to show a compact `+n` overflow chip.
+- Do not force ordinary labels into narrow fixed widths. Only truncate a label
+  when the label is wider than the card content itself.
 
 ## Technical Design
 
 - Keep the implementation in `web/src/components/TaskCard.tsx`.
-- Use absolutely positioned badge containers so the title does not reserve
-  horizontal space for priority or dependency metadata.
-- Add top padding to the title area only when badges are present so floating
-  badges do not cover the first title line.
+- Put priority and dependency chips before task labels in the same wrapping label
+  area.
 - Remove link-count rendering from cards entirely.
 - Keep title clamping with Tailwind's `line-clamp-2`.
-- Render at most three task labels plus the `+n` overflow chip in a single
-  non-wrapping label row.
+- Render at most three task labels plus the `+n` overflow chip in a wrapping
+  label area capped to two rows.
 
 ## Test Plan
 
 - Update component tests so priority text is `p 3`, not `p=3`.
-- Add a test proving badges are rendered in an absolutely positioned corner
-  container and do not sit inside the title row.
+- Add a test proving priority and dependency metadata render before task labels.
 - Add a test proving link-count metadata is absent even when links exist.
-- Add a test proving labels render in a single non-wrapping row with smaller
-  chip classes and overflow count.
+- Add a test proving labels render in a two-row-capped wrapping area without
+  fixed narrow per-label truncation.
 - Run the focused test first and confirm it fails before implementation.
 - After implementation, run focused frontend tests, frontend lint/test/build,
   server and CLI Go tests, `scripts/test-skill.sh`, and a real browser smoke

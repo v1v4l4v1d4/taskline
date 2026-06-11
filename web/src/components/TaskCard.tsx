@@ -65,7 +65,9 @@ export function TaskCard({ task, isBlocked, onClick, onDelete, overlay = false }
     : " cursor-pointer hover:border-slate-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
 
   const badgeClass =
-    "rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-3 tabular-nums shadow-sm";
+    "shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-3 tabular-nums";
+
+  const labelChipClass = "max-w-full shrink-0 truncate whitespace-nowrap rounded border px-1 py-0.5 text-[10px] leading-3 ";
 
   function openFromPointer(event: React.PointerEvent<HTMLDivElement>) {
     if (overlay) return;
@@ -170,59 +172,52 @@ export function TaskCard({ task, isBlocked, onClick, onDelete, overlay = false }
           <Trash2 size={12} className="mx-auto" aria-hidden="true" />
         </button>
       )}
-      <div className="absolute right-7 top-0 z-10 flex -translate-y-1/2 items-center gap-1">
-        <span
-          className={`${badgeClass} border-sky-200 bg-sky-50 text-sky-700`}
-          title={`Priority ${task.priority}`}
-        >
-          p {task.priority}
-        </span>
-        {dependencyCount > 0 && (
-          <span
-            className={`${badgeClass} ${
-              isBlocked
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700"
-            }`}
-            title={
-              isBlocked ? "Blocked: depends on other tasks not yet done" : "Dependencies are done"
-            }
-          >
-            deps {dependencyCount}
-          </span>
-        )}
-      </div>
-      <div className="min-w-0 pr-6 pt-2.5">
+      <div className="min-w-0 pr-6">
         <div>
           <p className="line-clamp-2 min-w-0 text-[13px] font-medium leading-snug text-slate-900">
             {task.title}
           </p>
         </div>
-        {labels.length > 0 && (
-          <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden">
-            {visibleLabels.map((label) => (
-              <span
-                key={label}
-                data-label-theme={getTaskLabelTheme(label).name}
-                className={
-                  "max-w-[5rem] shrink truncate rounded border px-1 py-0 text-[9px] leading-3 " +
-                  taskLabelChipClass(label)
-                }
-                title={label}
-              >
-                {label}
-              </span>
-            ))}
-            {hiddenLabelCount > 0 && (
-              <span
-                className="shrink-0 rounded border border-slate-200 bg-white px-1 py-0 text-[9px] leading-3 text-slate-400"
-                title={`${hiddenLabelCount} more labels`}
-              >
-                +{hiddenLabelCount}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="mt-1.5 flex max-h-[34px] min-w-0 flex-wrap items-start gap-1 overflow-hidden">
+          <span
+            className={`${badgeClass} border-sky-200 bg-sky-50 text-sky-700`}
+            title={`Priority ${task.priority}`}
+          >
+            p {task.priority}
+          </span>
+          {dependencyCount > 0 && (
+            <span
+              className={`${badgeClass} ${
+                isBlocked
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+              title={
+                isBlocked ? "Blocked: depends on other tasks not yet done" : "Dependencies are done"
+              }
+            >
+              deps {dependencyCount}
+            </span>
+          )}
+          {visibleLabels.map((label) => (
+            <span
+              key={label}
+              data-label-theme={getTaskLabelTheme(label).name}
+              className={labelChipClass + taskLabelChipClass(label)}
+              title={label}
+            >
+              {label}
+            </span>
+          ))}
+          {hiddenLabelCount > 0 && (
+            <span
+              className="shrink-0 whitespace-nowrap rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] leading-3 text-slate-400"
+              title={`${hiddenLabelCount} more labels`}
+            >
+              +{hiddenLabelCount}
+            </span>
+          )}
+        </div>
       </div>
       <div className="mt-1 flex items-center justify-end">
         <span

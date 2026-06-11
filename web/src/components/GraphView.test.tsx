@@ -54,6 +54,7 @@ vi.mock("@xyflow/react", () => ({
     onConnect,
     onEdgeClick,
     onNodeClick,
+    onNodeDoubleClick,
     onPaneClick,
   }: {
     nodes: Array<{
@@ -71,6 +72,10 @@ vi.mock("@xyflow/react", () => ({
       edge: MockEdge
     ) => void;
     onNodeClick?: (
+      event: React.MouseEvent<HTMLDivElement>,
+      node: { id: string; data: Record<string, unknown> }
+    ) => void;
+    onNodeDoubleClick?: (
       event: React.MouseEvent<HTMLDivElement>,
       node: { id: string; data: Record<string, unknown> }
     ) => void;
@@ -127,6 +132,7 @@ vi.mock("@xyflow/react", () => ({
             data-x={node.position.x}
             data-y={node.position.y}
             onClick={(event) => onNodeClick?.(event, node)}
+            onDoubleClick={(event) => onNodeDoubleClick?.(event, node)}
           >
             {NodeComponent ? <NodeComponent data={node.data} /> : node.id}
           </div>
@@ -221,7 +227,7 @@ describe("GraphView", () => {
     expect(bX).toBeLessThan(cX);
   });
 
-  it("highlights the selected relationship chain and clears on pane click", async () => {
+  it("highlights the selected relationship chain on double-click and clears on pane click", async () => {
     const user = userEvent.setup();
     renderGraph([
       task({ id: "a", title: "A" }),
@@ -230,12 +236,14 @@ describe("GraphView", () => {
       task({ id: "d", title: "Unrelated" }),
     ]);
 
-    await user.click(screen.getByTestId("node-b"));
+    await user.dblClick(screen.getByTestId("node-b"));
 
     expect(screen.getByTestId("node-a").dataset.dimmed).toBe("false");
     expect(screen.getByTestId("node-b").dataset.selected).toBe("true");
     expect(screen.getByTestId("node-c").dataset.dimmed).toBe("false");
     expect(screen.getByTestId("node-d").dataset.dimmed).toBe("true");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(screen.queryByRole("dialog", { name: /edit task b/i })).toBeNull();
 
     await user.click(screen.getByTestId("pane"));
 
@@ -243,7 +251,7 @@ describe("GraphView", () => {
     expect(screen.getByTestId("node-b").dataset.selected).toBe("false");
   });
 
-  it("opens the task editor when clicking a graph task node", async () => {
+  it("opens the task editor on single-click without highlighting the chain", async () => {
     const user = userEvent.setup();
     renderGraph([
       task({ id: "a", title: "A" }),
@@ -253,9 +261,9 @@ describe("GraphView", () => {
     await user.click(screen.getByTestId("node-b"));
 
     expect(
-      screen.getByRole("dialog", { name: /edit task editable task/i })
+      await screen.findByRole("dialog", { name: /edit task editable task/i })
     ).toBeTruthy();
-    expect(screen.getByTestId("node-b").dataset.selected).toBe("true");
+    expect(screen.getByTestId("node-b").dataset.selected).toBe("false");
 
     await user.click(screen.getByRole("button", { name: /close editor/i }));
 

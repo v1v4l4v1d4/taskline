@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import {
   Background,
@@ -34,6 +34,7 @@ import { TaskEditor } from "./TaskEditor";
 const ACTIVE_EDGE_COLOR = "#0f172a";
 const DIMMED_EDGE_COLOR = "#cbd5e1";
 const SELECTED_EDGE_COLOR = "#dc2626";
+const NODE_SINGLE_CLICK_OPEN_DELAY_MS = 250;
 
 const STATE_COLORS: Record<TaskState, string> = {
   pending: "#e2e8f0",
@@ -77,7 +78,27 @@ export function GraphView({ project }: Props) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
+  const pendingTaskOpenTimer = useRef<number | null>(null);
   const tasks = useMemo(() => tasksQ.data ?? [], [tasksQ.data]);
+
+  const clearPendingTaskOpen = useCallback(() => {
+    if (pendingTaskOpenTimer.current === null) return;
+    window.clearTimeout(pendingTaskOpenTimer.current);
+    pendingTaskOpenTimer.current = null;
+  }, []);
+
+  useEffect(() => clearPendingTaskOpen, [clearPendingTaskOpen]);
+
+  const scheduleTaskOpen = useCallback(
+    (task: Task) => {
+      clearPendingTaskOpen();
+      pendingTaskOpenTimer.current = window.setTimeout(() => {
+        setEditing(task);
+        pendingTaskOpenTimer.current = null;
+      }, NODE_SINGLE_CLICK_OPEN_DELAY_MS);
+    },
+    [clearPendingTaskOpen]
+  );
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -192,15 +213,22 @@ export function GraphView({ project }: Props) {
         onConnect={onConnect}
         onEdgeClick={(event, edge) => {
           event.stopPropagation();
+          clearPendingTaskOpen();
           setSelectedTaskId(null);
           setSelectedEdgeId(edge.id);
         }}
         onNodeClick={(_, node) => {
+          setSelectedEdgeId(null);
+          scheduleTaskOpen(node.data.task);
+        }}
+        onNodeDoubleClick={(event, node) => {
+          event.stopPropagation();
+          clearPendingTaskOpen();
           setSelectedTaskId(node.id);
           setSelectedEdgeId(null);
-          setEditing(node.data.task);
         }}
         onPaneClick={() => {
+          clearPendingTaskOpen();
           setSelectedTaskId(null);
           setSelectedEdgeId(null);
         }}

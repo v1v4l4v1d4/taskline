@@ -9,6 +9,7 @@ const queryMocks = vi.hoisted(() => ({
   useTasks: vi.fn(),
   useUpdateTask: vi.fn(),
   useAddDependency: vi.fn(),
+  useDeleteDependency: vi.fn(),
 }));
 
 vi.mock("../hooks/queries", () => queryMocks);
@@ -24,17 +25,34 @@ vi.mock("./TaskEditor", () => ({
   ),
 }));
 
+type MockEdge = {
+  id: string;
+  type?: string;
+  source: string;
+  target: string;
+  data?: Record<string, unknown>;
+  style?: { stroke?: string };
+  animated?: boolean;
+};
+
 vi.mock("@xyflow/react", () => ({
+  BaseEdge: ({ id, style }: { id: string; style?: { stroke?: string } }) => (
+    <path data-testid={`base-edge-${id}`} data-stroke={style?.stroke} />
+  ),
   Background: () => <div data-testid="background" />,
   Controls: () => <div data-testid="controls" />,
+  EdgeLabelRenderer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  getSmoothStepPath: () => ["M0 0L100 0", 50, 0],
   Handle: () => <span data-testid="handle" />,
   MarkerType: { ArrowClosed: "arrowclosed" },
   Position: { Left: "left", Right: "right" },
   ReactFlow: ({
     nodes,
     edges,
+    edgeTypes,
     nodeTypes,
     onConnect,
+    onEdgeClick,
     onNodeClick,
     onPaneClick,
   }: {
@@ -44,9 +62,14 @@ vi.mock("@xyflow/react", () => ({
       position: { x: number; y: number };
       data: Record<string, unknown>;
     }>;
-    edges: Array<{ id: string; style?: { stroke?: string }; animated?: boolean }>;
+    edges: MockEdge[];
+    edgeTypes?: Record<string, React.ComponentType<Record<string, unknown>>>;
     nodeTypes: Record<string, React.ComponentType<{ data: Record<string, unknown> }>>;
     onConnect?: (connection: { source: string; target: string }) => void;
+    onEdgeClick?: (
+      event: React.MouseEvent<HTMLDivElement>,
+      edge: MockEdge
+    ) => void;
     onNodeClick?: (
       event: React.MouseEvent<HTMLDivElement>,
       node: { id: string; data: Record<string, unknown> }
@@ -65,14 +88,34 @@ vi.mock("@xyflow/react", () => ({
         Connect A to C
       </button>
       <div data-testid="edge-ids">{edges.map((edge) => edge.id).join(",")}</div>
-      {edges.map((edge) => (
-        <div
-          key={edge.id}
-          data-testid={`edge-${edge.id}`}
-          data-stroke={edge.style?.stroke}
-          data-animated={String(edge.animated)}
-        />
-      ))}
+      {edges.map((edge) => {
+        const EdgeComponent = edgeTypes?.[edge.type ?? ""];
+        return (
+          <div
+            key={edge.id}
+            data-testid={`edge-${edge.id}`}
+            data-stroke={edge.style?.stroke}
+            data-selected={String(edge.data?.selected)}
+            data-animated={String(edge.animated)}
+            onClick={(event) => onEdgeClick?.(event, edge)}
+          >
+            {EdgeComponent ? (
+              <EdgeComponent
+                id={edge.id}
+                sourceX={0}
+                sourceY={0}
+                targetX={100}
+                targetY={0}
+                sourcePosition="right"
+                targetPosition="left"
+                markerEnd="arrowclosed"
+                style={edge.style}
+                data={edge.data}
+              />
+            ) : null}
+          </div>
+        );
+      })}
       {nodes.map((node) => {
         const NodeComponent = nodeTypes[node.type ?? ""];
         return (
@@ -124,10 +167,12 @@ function renderGraph(tasks: Task[]) {
   });
   const updateMutate = vi.fn();
   const addDependencyMutate = vi.fn();
+  const deleteDependencyMutate = vi.fn();
 
   queryMocks.useTasks.mockReturnValue({ data: tasks });
   queryMocks.useUpdateTask.mockReturnValue({ mutate: updateMutate });
   queryMocks.useAddDependency.mockReturnValue({ mutate: addDependencyMutate });
+  queryMocks.useDeleteDependency.mockReturnValue({ mutate: deleteDependencyMutate });
 
   render(
     <QueryClientProvider client={client}>
@@ -135,7 +180,7 @@ function renderGraph(tasks: Task[]) {
     </QueryClientProvider>
   );
 
-  return { updateMutate, addDependencyMutate };
+  return { updateMutate, addDependencyMutate, deleteDependencyMutate };
 }
 
 describe("GraphView", () => {
@@ -215,6 +260,39 @@ describe("GraphView", () => {
     await user.click(screen.getByRole("button", { name: /close editor/i }));
 
     expect(screen.queryByRole("dialog", { name: /edit task editable task/i })).toBeNull();
+  });
+
+  it("selects dependency edges and deletes the selected relationship", async () => {
+    const user = userEvent.setup();
+    const { deleteDependencyMutate } = renderGraph([
+      task({ id: "a", title: "A" }),
+      task({ id: "b", title: "B", depends_on: ["a"] }),
+      task({ id: "c", title: "C", depends_on: ["b"] }),
+      task({ id: "d", title: "Unrelated" }),
+    ]);
+
+    await user.click(screen.getByTestId("edge-b->c"));
+
+    expect(screen.getByTestId("node-a").dataset.dimmed).toBe("false");
+    expect(screen.getByTestId("node-b").dataset.dimmed).toBe("false");
+    expect(screen.getByTestId("node-c").dataset.dimmed).toBe("false");
+    expect(screen.getByTestId("node-d").dataset.dimmed).toBe("true");
+    expect(screen.getByTestId("edge-b->c").dataset.selected).toBe("true");
+    expect(screen.getByTestId("edge-b->c").dataset.stroke).toBe("#dc2626");
+
+    await user.click(screen.getByRole("button", { name: /delete dependency b to c/i }));
+
+    expect(deleteDependencyMutate).toHaveBeenCalledWith({
+      taskId: "c",
+      dependsOn: "b",
+    });
+
+    await user.click(screen.getByTestId("pane"));
+
+    expect(screen.getByTestId("node-d").dataset.dimmed).toBe("false");
+    expect(
+      screen.queryByRole("button", { name: /delete dependency b to c/i })
+    ).toBeNull();
   });
 
   it("keeps the inline state selector from opening the task editor", async () => {

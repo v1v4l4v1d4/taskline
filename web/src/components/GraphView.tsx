@@ -1,14 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import {
   Background,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   MarkerType,
   type Connection,
   type Edge,
+  type EdgeProps,
   type Node,
   Position,
   ReactFlow,
+  getSmoothStepPath,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -18,8 +23,17 @@ import {
   type Task,
   type TaskState,
 } from "../lib/api";
-import { useAddDependency, useTasks, useUpdateTask } from "../hooks/queries";
+import {
+  useAddDependency,
+  useDeleteDependency,
+  useTasks,
+  useUpdateTask,
+} from "../hooks/queries";
 import { TaskEditor } from "./TaskEditor";
+
+const ACTIVE_EDGE_COLOR = "#0f172a";
+const DIMMED_EDGE_COLOR = "#cbd5e1";
+const SELECTED_EDGE_COLOR = "#dc2626";
 
 const STATE_COLORS: Record<TaskState, string> = {
   pending: "#e2e8f0",
@@ -43,6 +57,13 @@ type TaskNodeData = {
 };
 
 type TaskGraphNode = Node<TaskNodeData, "taskNode">;
+type TaskEdgeData = {
+  selected: boolean;
+  sourceTitle: string;
+  targetTitle: string;
+  onDelete: () => void;
+};
+type TaskGraphEdge = Edge<TaskEdgeData, "deletableEdge">;
 
 const STATE_ORDER = new Map<TaskState, number>(
   STATES.map((state, index) => [state, index])
@@ -52,7 +73,9 @@ export function GraphView({ project }: Props) {
   const tasksQ = useTasks(project.id);
   const updateTask = useUpdateTask(project.id);
   const addDependency = useAddDependency(project.id);
+  const deleteDependency = useDeleteDependency(project.id);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
   const tasks = useMemo(() => tasksQ.data ?? [], [tasksQ.data]);
 
@@ -78,7 +101,10 @@ export function GraphView({ project }: Props) {
     const depths = computeDependencyDepths(visibleTasks);
     const relatedIds = selectedTaskId
       ? collectRelatedTaskIds(selectedTaskId, visibleTasks)
-      : new Set<string>();
+      : selectedEdgeId
+        ? collectRelatedEdgeTaskIds(selectedEdgeId, visibleTasks)
+        : new Set<string>();
+    const hasSelection = !!selectedTaskId || !!selectedEdgeId;
     const rowsByDepth = new Map<number, Task[]>();
 
     for (const task of visibleTasks) {
@@ -96,7 +122,7 @@ export function GraphView({ project }: Props) {
         row.sort(compareGraphTasks);
         row.forEach((t, ri) => {
           const selected = selectedTaskId === t.id;
-          const dimmed = !!selectedTaskId && !relatedIds.has(t.id);
+          const dimmed = hasSelection && !relatedIds.has(t.id);
           nodes.push({
             id: t.id,
             type: "taskNode",
@@ -112,44 +138,71 @@ export function GraphView({ project }: Props) {
         });
       });
 
-    const edges: Edge[] = [];
+    const edges: TaskGraphEdge[] = [];
     for (const t of visibleTasks) {
       for (const dep of t.depends_on ?? []) {
         if (!visibleIds.has(dep)) continue;
+        const sourceTask = visibleTasks.find((task) => task.id === dep);
+        const edgeId = `${dep}->${t.id}`;
+        const edgeSelected = selectedEdgeId === edgeId;
         const edgeRelated =
-          !selectedTaskId || (relatedIds.has(dep) && relatedIds.has(t.id));
+          !hasSelection || (relatedIds.has(dep) && relatedIds.has(t.id));
+        const stroke = edgeSelected
+          ? SELECTED_EDGE_COLOR
+          : edgeRelated
+            ? ACTIVE_EDGE_COLOR
+            : DIMMED_EDGE_COLOR;
         edges.push({
-          id: `${dep}->${t.id}`,
+          id: edgeId,
           source: dep,
           target: t.id,
-          type: "smoothstep",
-          animated: edgeRelated && !!selectedTaskId,
+          type: "deletableEdge",
+          animated: edgeRelated && hasSelection,
+          data: {
+            selected: edgeSelected,
+            sourceTitle: sourceTask?.title ?? dep,
+            targetTitle: t.title,
+            onDelete: () => {
+              deleteDependency.mutate({ taskId: t.id, dependsOn: dep });
+              setSelectedEdgeId(null);
+            },
+          },
           style: {
-            stroke: edgeRelated ? "#0f172a" : "#cbd5e1",
+            stroke,
             opacity: edgeRelated ? 1 : 0.25,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: edgeRelated ? "#0f172a" : "#cbd5e1",
+            color: stroke,
           },
         });
       }
     }
     return { nodes, edges };
-  }, [selectedTaskId, tasks, updateTask]);
+  }, [deleteDependency, selectedEdgeId, selectedTaskId, tasks, updateTask]);
 
   return (
     <div className="flex-1 h-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        edgeTypes={{ deletableEdge: DeletableEdge }}
         nodeTypes={{ taskNode: TaskNode }}
         onConnect={onConnect}
+        onEdgeClick={(event, edge) => {
+          event.stopPropagation();
+          setSelectedTaskId(null);
+          setSelectedEdgeId(edge.id);
+        }}
         onNodeClick={(_, node) => {
           setSelectedTaskId(node.id);
+          setSelectedEdgeId(null);
           setEditing(node.data.task);
         }}
-        onPaneClick={() => setSelectedTaskId(null)}
+        onPaneClick={() => {
+          setSelectedTaskId(null);
+          setSelectedEdgeId(null);
+        }}
         fitView
         proOptions={{ hideAttribution: true }}
       >
@@ -165,6 +218,54 @@ export function GraphView({ project }: Props) {
         />
       )}
     </div>
+  );
+}
+
+function DeletableEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerEnd,
+  style,
+  data,
+}: EdgeProps<TaskGraphEdge>) {
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+      {data?.selected && (
+        <EdgeLabelRenderer>
+          <button
+            type="button"
+            aria-label={`Delete dependency ${data.sourceTitle} to ${data.targetTitle}`}
+            title="Delete dependency"
+            className="nodrag nopan absolute flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm hover:bg-red-50"
+            style={{
+              pointerEvents: "all",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 18}px)`,
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onDelete();
+            }}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+          </button>
+        </EdgeLabelRenderer>
+      )}
+    </>
   );
 }
 
@@ -241,6 +342,16 @@ function computeDependencyDepths(tasks: Task[]): Map<string, number> {
 
   for (const task of tasks) depthOf(task.id);
   return memo;
+}
+
+function collectRelatedEdgeTaskIds(selectedEdgeId: string, tasks: Task[]): Set<string> {
+  const [sourceId, targetId] = selectedEdgeId.split("->");
+  if (!sourceId || !targetId) return new Set();
+  const related = collectRelatedTaskIds(sourceId, tasks);
+  for (const id of collectRelatedTaskIds(targetId, tasks)) {
+    related.add(id);
+  }
+  return related;
 }
 
 function collectRelatedTaskIds(selectedTaskId: string, tasks: Task[]): Set<string> {

@@ -97,7 +97,8 @@ export function GraphView({ project }: Props) {
     const colSpacing = 260;
     const rowSpacing = 110;
     const visibleTasks = tasks.filter((task) => task.state !== "done");
-    const visibleIds = new Set(visibleTasks.map((task) => task.id));
+    const visibleTasksById = new Map(visibleTasks.map((task) => [task.id, task]));
+    const visibleIds = new Set(visibleTasksById.keys());
     const depths = computeDependencyDepths(visibleTasks);
     const relatedIds = selectedTaskId
       ? collectRelatedTaskIds(selectedTaskId, visibleTasks)
@@ -142,7 +143,7 @@ export function GraphView({ project }: Props) {
     for (const t of visibleTasks) {
       for (const dep of t.depends_on ?? []) {
         if (!visibleIds.has(dep)) continue;
-        const sourceTask = visibleTasks.find((task) => task.id === dep);
+        const sourceTask = visibleTasksById.get(dep);
         const edgeId = `${dep}->${t.id}`;
         const edgeSelected = selectedEdgeId === edgeId;
         const edgeRelated =
@@ -241,15 +242,21 @@ function DeletableEdge({
     targetY,
     targetPosition,
   });
+  const {
+    selected = false,
+    sourceTitle = "",
+    targetTitle = "",
+    onDelete,
+  } = data ?? {};
 
   return (
     <>
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
-      {data?.selected && (
+      {selected && (
         <EdgeLabelRenderer>
           <button
             type="button"
-            aria-label={`Delete dependency ${data.sourceTitle} to ${data.targetTitle}`}
+            aria-label={`Delete dependency ${sourceTitle} to ${targetTitle}`}
             title="Delete dependency"
             className="nodrag nopan absolute flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm hover:bg-red-50"
             style={{
@@ -258,7 +265,7 @@ function DeletableEdge({
             }}
             onClick={(event) => {
               event.stopPropagation();
-              data.onDelete();
+              onDelete?.();
             }}
           >
             <Trash2 size={14} aria-hidden="true" />

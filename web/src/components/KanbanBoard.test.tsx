@@ -123,4 +123,47 @@ describe("KanbanBoard context menu", () => {
     expect(screen.getByText("provider,review")).toBeTruthy();
     expect(deleteMutate).not.toHaveBeenCalled();
   });
+
+  it("pans the board horizontally when dragging empty kanban space", () => {
+    renderBoard();
+    const scrollRegion = screen.getByTestId("kanban-scroll-region");
+
+    scrollRegion.scrollLeft = 100;
+    fireEvent.pointerDown(scrollRegion, {
+      button: 0,
+      clientX: 240,
+      pointerId: 1,
+    });
+    fireEvent.pointerMove(scrollRegion, {
+      clientX: 160,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(scrollRegion, {
+      pointerId: 1,
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(180);
+  });
+
+  it("does not pan the board from task cards", () => {
+    renderBoard();
+    const scrollRegion = screen.getByTestId("kanban-scroll-region");
+    const card = screen.getByRole("button", { name: /open task copy source task/i });
+
+    scrollRegion.scrollLeft = 100;
+    fireEvent.pointerDown(card, {
+      button: 0,
+      clientX: 240,
+      pointerId: 1,
+    });
+    fireEvent.pointerMove(scrollRegion, {
+      clientX: 160,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(scrollRegion, {
+      pointerId: 1,
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(100);
+  });
 });

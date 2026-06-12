@@ -118,6 +118,31 @@ describe("App workspace layout", () => {
     expect(screen.queryByRole("button", { name: "+ New task" })).toBeNull();
   });
 
+  it("toggles the project sidebar from the project title bar", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const heading = screen.getByRole("heading", { level: 2, name: "taskline" });
+    const header = heading.closest("header");
+    const collapseButton = screen.getByRole("button", { name: "Collapse sidebar" });
+
+    expect(header).toBeTruthy();
+    if (!header) throw new Error("expected project header");
+    expect(header.contains(collapseButton)).toBe(true);
+    expect(screen.getByRole("complementary", { name: "Projects" })).toBeTruthy();
+
+    await user.click(collapseButton);
+
+    const expandButton = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(screen.queryByRole("complementary", { name: "Projects" })).toBeNull();
+    expect(header.contains(expandButton)).toBe(true);
+
+    await user.click(expandButton);
+
+    expect(screen.getByRole("complementary", { name: "Projects" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeTruthy();
+  });
+
   it("keeps task creation available from the graph view and Cmd+K", async () => {
     const user = userEvent.setup();
     renderApp();

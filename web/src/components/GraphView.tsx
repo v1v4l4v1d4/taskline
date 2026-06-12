@@ -204,13 +204,11 @@ export function GraphView({ project }: Props) {
           source: dep,
           target: t.id,
           type: "deletableEdge",
-          zIndex: hasSelection
-            ? edgeSelected
-              ? SELECTED_EDGE_Z_INDEX
-              : edgeRelated
-                ? HIGHLIGHTED_EDGE_Z_INDEX
-                : DEFAULT_EDGE_Z_INDEX
-            : DEFAULT_EDGE_Z_INDEX,
+          zIndex: edgeSelected
+            ? SELECTED_EDGE_Z_INDEX
+            : edgeRelated && hasSelection
+              ? HIGHLIGHTED_EDGE_Z_INDEX
+              : DEFAULT_EDGE_Z_INDEX,
           animated: edgeRelated && hasSelection,
           data: {
             selected: edgeSelected,

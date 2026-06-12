@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Project, Task } from "../lib/api";
@@ -61,7 +61,9 @@ describe("TaskSearchDialog", () => {
     );
 
     await user.type(screen.getByRole("searchbox", { name: "Search tasks" }), "agent");
-    expect(queryMocks.useTaskSearch).toHaveBeenLastCalledWith(project.id, "agent");
+    await waitFor(() => {
+      expect(queryMocks.useTaskSearch).toHaveBeenLastCalledWith(project.id, "agent");
+    });
 
     await user.click(
       screen.getByRole("button", { name: /Agent capability evaluation harness/i })
@@ -89,6 +91,35 @@ describe("TaskSearchDialog", () => {
     );
 
     await user.keyboard("{Escape}");
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes on backdrop click without closing when the dialog is clicked", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    queryMocks.useTaskSearch.mockReturnValue({
+      data: [],
+      isFetching: false,
+      isError: false,
+      error: null,
+    });
+
+    render(
+      <TaskSearchDialog
+        project={project}
+        onClose={onClose}
+        onSelect={vi.fn()}
+      />
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Search tasks" });
+    await user.click(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+
+    const backdrop = dialog.parentElement;
+    if (!backdrop) throw new Error("expected dialog backdrop");
+    await user.click(backdrop);
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });

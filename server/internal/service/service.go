@@ -167,7 +167,7 @@ func scoreTaskSearch(task *model.Task, query string, terms []string) int {
 		return 0
 	}
 	score := 0
-	id := normalizeSearchText(task.ID)
+	id := task.ID
 	if query == id {
 		score += 20000
 	} else if len(query) >= 4 && strings.HasPrefix(id, query) {
@@ -178,9 +178,12 @@ func scoreTaskSearch(task *model.Task, query string, terms []string) int {
 
 	title := normalizeSearchText(task.Title)
 	description := normalizeSearchText(task.Description)
-	labels := normalizeSearchText(strings.Join(task.Labels, " "))
-	taskType := normalizeSearchText(string(task.Type))
-	state := normalizeSearchText(string(task.State))
+	labels := ""
+	if len(task.Labels) > 0 {
+		labels = normalizeSearchText(strings.Join(task.Labels, " "))
+	}
+	taskType := string(task.Type)
+	state := string(task.State)
 
 	if query != "" {
 		if strings.Contains(title, query) {

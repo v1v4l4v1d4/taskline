@@ -15,13 +15,20 @@ function shortID(id: string): string {
 
 export function TaskSearchDialog({ project, onClose, onSelect }: Props) {
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const results = useTaskSearch(project.id, query);
+  const results = useTaskSearch(project.id, debouncedQuery);
   const tasks = results.data ?? [];
+  const queryReady = debouncedQuery.trim() === query.trim();
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 200);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -35,11 +42,15 @@ export function TaskSearchDialog({ project, onClose, onSelect }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/30 px-4 pt-[12vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/30 px-4 pt-[12vh]"
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search tasks"
+        onClick={(event) => event.stopPropagation()}
         className="flex w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl ring-1 ring-slate-200"
       >
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
@@ -69,7 +80,7 @@ export function TaskSearchDialog({ project, onClose, onSelect }: Props) {
             <div className="px-3 py-4 text-sm text-red-700">
               {(results.error as Error).message}
             </div>
-          ) : results.isFetching && tasks.length === 0 ? (
+          ) : (!queryReady || results.isFetching) && tasks.length === 0 ? (
             <div className="px-3 py-4 text-sm text-slate-500">Searching...</div>
           ) : tasks.length === 0 ? (
             <div className="px-3 py-4 text-sm text-slate-500">No matches</div>

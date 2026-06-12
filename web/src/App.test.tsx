@@ -105,10 +105,12 @@ describe("App workspace layout", () => {
     const newTaskButton = screen.getByRole("button", { name: "+ New" });
 
     expect(heading).toBeTruthy();
+    expect(header).toBeTruthy();
+    if (!header) throw new Error("expected project header");
     expect(screen.getByText("Agent board")).toBeTruthy();
-    expect(header?.contains(kanbanButton)).toBe(true);
-    expect(header?.contains(graphButton)).toBe(true);
-    expect(header?.contains(newTaskButton)).toBe(true);
+    expect(header.contains(kanbanButton)).toBe(true);
+    expect(header.contains(graphButton)).toBe(true);
+    expect(header.contains(newTaskButton)).toBe(true);
     expect(screen.getByRole("region", { name: "Kanban board" }).parentElement?.className).not.toContain(
       "pt-14"
     );

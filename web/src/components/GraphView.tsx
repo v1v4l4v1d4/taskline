@@ -279,7 +279,7 @@ export function GraphView({ project }: Props) {
           task={taskMenu.task}
           position={{ x: taskMenu.x, y: taskMenu.y }}
           onClose={() => setTaskMenu(null)}
-          onEdit={(task) => setEditing(task)}
+          onEdit={setEditing}
           onCopy={(task) => setCopyDraft(createTaskCopyDraft(task))}
           onDelete={(task) => {
             deleteTask.mutate(task.id, { onError: showMutationError });

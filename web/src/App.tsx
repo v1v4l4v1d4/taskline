@@ -89,8 +89,8 @@ export default function App() {
           title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           onClick={() => setSidebarOpen((open) => !open)}
           className={
-            "absolute top-4 z-30 hidden h-8 w-8 items-center justify-center rounded-md border border-[var(--tl-outline)] bg-[var(--tl-surface-raised)] text-[var(--tl-ink-muted)] shadow-[var(--tl-shadow-paper)] transition-[left,background-color,border-color,box-shadow,color] duration-300 ease-out hover:border-[var(--tl-outline-strong)] hover:bg-[var(--tl-bg-quiet)] hover:text-[var(--tl-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tl-focus)] sm:inline-flex " +
-            (sidebarOpen ? "left-64 -translate-x-1/2" : "left-4 -translate-x-1/2")
+            "absolute top-4 z-30 hidden h-8 w-8 items-center justify-center rounded-r-md border border-[var(--tl-outline)] bg-[var(--tl-surface-raised)] text-[var(--tl-ink-muted)] shadow-[var(--tl-shadow-paper)] transition-[left,background-color,border-color,box-shadow,color] duration-300 ease-out hover:border-[var(--tl-outline-strong)] hover:bg-[var(--tl-bg-quiet)] hover:text-[var(--tl-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tl-focus)] sm:inline-flex " +
+            (sidebarOpen ? "left-64" : "left-0")
           }
         >
           <SidebarIcon size={16} aria-hidden="true" />
@@ -170,7 +170,7 @@ function ProjectWorkspace({
       <header
         className={
           "flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--tl-outline)] bg-[var(--tl-surface)] py-3 pr-6 shadow-[0_1px_0_rgba(255,255,255,0.55)] max-sm:px-3 max-sm:py-2 sm:gap-4 " +
-          (!showHeaderSidebarToggle && !sidebarOpen ? "pl-16" : "pl-6")
+          (showHeaderSidebarToggle ? "pl-6" : "pl-10")
         }
       >
         <div className="flex min-w-0 flex-1 items-center gap-3 max-sm:basis-full">

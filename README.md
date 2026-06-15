@@ -67,7 +67,10 @@ export TASKLINE_PROJECT=demo
 Two views, switchable from the toolbar:
 
 - **Kanban** — seven columns (pending / start / spec / dev / test /
-  review / done), cards sorted by priority within each column. Drag a card to
+  review / done), each showing its task count in the column header.
+  Columns default to "next execution order" (unblocked first, then
+  priority / FIFO) and expose per-column sort controls for execution
+  order, priority high-to-low, and created oldest-first. Drag a card to
   change its state; the server accepts moves in either direction.
   `pending` is a parking lot — tasks there are not runnable, and the
   "+ New task" modal exposes an *Auto-start* toggle (on by default) to
@@ -77,6 +80,11 @@ Two views, switchable from the toolbar:
   can be opened and edited from the task editor.
 - **Dependency graph** — every task is a node; edges follow `depends_on`.
   Change state from the dropdown on each node.
+
+The workspace header contains sidebar collapse, task search, view toggle,
+and "+ New" controls. `?project=<name|id>` keeps the selected project
+shareable; `?view=graph` opens the graph directly while the default
+Kanban view keeps the URL clean.
 
 The UI auto-refreshes every 10 s so changes from the CLI show up
 without a manual reload.

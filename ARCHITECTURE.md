@@ -156,6 +156,14 @@ Adding an existing edge is a no-op (the unique-key violation is caught
 and swallowed) so dependency-add is idempotent for agents retrying on
 network blips.
 
+Task search is project-scoped lexical matching, not a separate index or
+vector store. The handler validates `q` / `limit`, the service ranks
+short-id, title, description, label, type, and state matches, and the
+store remains a task persistence layer. This keeps the search feature in
+the same local-first shape as the rest of the product; a future semantic
+search feature would need an explicit persistence/indexing design rather
+than being hidden inside the current store.
+
 ## Web UI delivery
 
 `server/web/embed.go` exposes the bundle via two paths, in priority:
@@ -175,6 +183,27 @@ When both miss, the server runs API-only and `serveUI` returns 404.
 The handler registers API routes first, then mounts `serveUI` as a
 catch-all on `NoRoute`. Unknown paths fall through to `index.html` so
 the SPA's client-side router handles deep links.
+
+## Web UI state and ordering
+
+The React app keeps project and view selection in the URL without adding
+a full router:
+
+- `?project=<name|id>` selects a project and survives reload/share.
+  The app prefers writing the project name, but still resolves saved id
+  links.
+- `?view=graph` opens the dependency graph. Kanban is the default and
+  clears the `view` query param.
+
+Kanban column sorting is component-local UI state. The default "next
+execution order" mirrors the agent mental model by putting unblocked
+tasks before blocked tasks, then sorting by priority and creation time;
+other column sort options are browse conveniences. The canonical
+runnable ordering remains the server-side SQL query used by `task next`.
+
+The task search dialog is also a derived UI: it calls
+`GET /api/v1/projects/:project/tasks/search`, opens the selected task in
+the normal editor, and does not own task state.
 
 ## CLI ↔ server protocol
 

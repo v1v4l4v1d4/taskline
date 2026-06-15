@@ -55,7 +55,7 @@ export function TaskCard({ task, isBlocked, onClick, onContextMenu, overlay = fa
   // overlay clone is what the eye tracks. Without this, you'd see
   // both the source and the overlay at once.
   const dragVisualClass = overlay
-    ? " shadow-[var(--tl-shadow-lift)] ring-1 ring-[var(--tl-outline-strong)] cursor-grabbing"
+    ? " shadow-[var(--tl-shadow-card-hover)] ring-1 ring-[var(--tl-outline-strong)] cursor-grabbing"
     : isDragging
     ? " opacity-30"
     : isBlocked
@@ -64,7 +64,7 @@ export function TaskCard({ task, isBlocked, onClick, onContextMenu, overlay = fa
 
   const interactiveClass = overlay
     ? ""
-    : " cursor-pointer hover:border-[var(--tl-outline-strong)] hover:shadow-[var(--tl-shadow-lift)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tl-focus)]";
+    : " cursor-pointer hover:border-[var(--tl-outline-strong)] hover:shadow-[var(--tl-shadow-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tl-focus)]";
 
   const labelChipClass =
     "max-w-full shrink-0 truncate whitespace-nowrap rounded border px-1 py-0.5 text-[10px] leading-3";
@@ -125,7 +125,7 @@ export function TaskCard({ task, isBlocked, onClick, onContextMenu, overlay = fa
             }
       }
       className={
-        "relative group rounded-md border border-[var(--tl-outline)] bg-[var(--tl-surface-raised)] p-2.5 shadow-[var(--tl-shadow-paper)] border-l-4 transition " +
+        "relative group rounded-md border border-[var(--tl-outline)] bg-[var(--tl-surface-raised)] p-2.5 shadow-[var(--tl-shadow-card)] border-l-4 transition " +
         typeColor +
         dragVisualClass +
         interactiveClass

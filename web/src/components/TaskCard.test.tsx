@@ -142,7 +142,7 @@ describe("TaskCard", () => {
     expect(card.className).toContain("border-l-violet-500");
   });
 
-  it("uses the shared Wabi-Sabi paper card tokens", () => {
+  it("uses concise Wabi-Sabi task card shadow tokens", () => {
     renderCard();
 
     const card = screen.getByRole("button", { name: /open task clickable task card/i });
@@ -150,7 +150,23 @@ describe("TaskCard", () => {
     expect(card.getAttribute("data-visual-style")).toBe("wabi-sabi");
     expect(card.className).toContain("bg-[var(--tl-surface-raised)]");
     expect(card.className).toContain("border-[var(--tl-outline)]");
-    expect(card.className).toContain("shadow-[var(--tl-shadow-paper)]");
+    expect(card.className).toContain("shadow-[var(--tl-shadow-card)]");
+    expect(card.className).toContain("hover:shadow-[var(--tl-shadow-card-hover)]");
+    expect(card.className).not.toContain("shadow-[var(--tl-shadow-paper)]");
+    expect(card.className).not.toContain("hover:shadow-[var(--tl-shadow-lift)]");
+  });
+
+  it("uses the shorter card hover shadow for drag overlays", () => {
+    render(
+      <DndContext>
+        <TaskCard task={task} isBlocked={false} onClick={vi.fn()} overlay />
+      </DndContext>
+    );
+
+    const overlay = screen.getByText("Clickable task card").closest("[data-visual-style]");
+
+    expect(overlay?.className).toContain("shadow-[var(--tl-shadow-card-hover)]");
+    expect(overlay?.className).not.toContain("shadow-[var(--tl-shadow-lift)]");
   });
 
   it("renders priority and dependency metadata as leading label chips", () => {

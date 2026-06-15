@@ -106,11 +106,17 @@ This caps the project's ambition. We will never be a multi-tenant SaaS;
 we will never have a "team workspace" feature; we will never sync
 across machines. Those things are real, useful, and out of scope.
 
-### 6. Priority is an integer, sorting is server-side
+### 6. Priority is an integer; runnable ordering is server-side
 
 Priority is one signed integer per task. Higher means runs sooner. Ties
-break on creation time (FIFO). Agents do not need to argue with a
-labeling taxonomy — they pick a number, and `task next` does the rest.
+break on creation time (FIFO) for the canonical runnable query. Agents
+do not need to argue with a labeling taxonomy — they pick a number, and
+`task next` does the rest.
+
+The web kanban may offer local browse-time sorting (for example
+execution order, priority high-to-low, or created oldest-first). Those
+controls do not change the model, the priority field, or the server's
+answer to "what should run next?".
 
 This is intentionally underpowered. taskline does not model "urgency vs
 importance", "estimated effort", "blocked by user feedback", or any of

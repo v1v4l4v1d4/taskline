@@ -198,6 +198,9 @@ describe("App workspace layout", () => {
     expect(collapseButton.getAttribute("aria-expanded")).toBe("true");
     expect(collapseButton.className).toContain("absolute");
     expect(collapseButton.className).toContain("left-64");
+    expect(collapseButton.className).not.toContain("-translate-x-1/2");
+    expect(collapseButton.className).toContain("rounded-r-md");
+    expect(collapseButton.className).not.toContain("rounded-md");
     expect(collapseButton.className).toContain("transition-[left,background-color,border-color,box-shadow,color]");
     expect(sidebarShell?.className).toContain("transition-[width]");
     expect(sidebarShell?.className).toContain("w-64");
@@ -209,8 +212,12 @@ describe("App workspace layout", () => {
     expect(screen.queryByRole("complementary", { name: "Projects" })).toBeNull();
     expect(header.contains(expandButton)).toBe(false);
     expect(expandButton.getAttribute("aria-expanded")).toBe("false");
-    expect(expandButton.className).toContain("left-4");
-    expect(header.className).toContain("pl-16");
+    expect(expandButton.className).toContain("left-0");
+    expect(expandButton.className).not.toContain("-translate-x-1/2");
+    expect(expandButton.className).toContain("rounded-r-md");
+    expect(expandButton.className).not.toContain("rounded-md");
+    expect(header.className).toContain("pl-10");
+    expect(header.className).not.toContain("pl-16");
     expect(sidebarShell?.className).toContain("w-0");
 
     await user.click(expandButton);

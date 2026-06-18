@@ -5,21 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"mime"
-	"mime/multipart"
 	"net/http"
-	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/google/uuid"
 
 	"taskline_server/api/model"
 	"taskline_server/internal/config"
@@ -30,13 +24,13 @@ import (
 
 // Handler wires HTTP routes to the service layer.
 type Handler struct {
-	svc  *service.Service
-	cfg  *config.Config
-	uiFS fs.FS // populated by Register when an embedded/external UI is found
+	svc         *service.Service
+	attachments *taskAttachmentStorage
+	uiFS        fs.FS // populated by Register when an embedded/external UI is found
 }
 
 func New(svc *service.Service, cfg *config.Config) *Handler {
-	return &Handler{svc: svc, cfg: cfg}
+	return &Handler{svc: svc, attachments: newTaskAttachmentStorage(cfg)}
 }
 
 // Register installs all routes on the Hertz server. Order matters: API
@@ -209,8 +203,8 @@ func (h *Handler) listTasks(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	h.attachTaskImageURLs(ts...)
-	h.attachTaskDocURLs(ts...)
+	h.attachments.AttachTaskImageURLs(ts...)
+	h.attachments.AttachTaskDocURLs(ts...)
 	writeJSON(c, http.StatusOK, map[string]any{"tasks": ts})
 }
 
@@ -235,8 +229,8 @@ func (h *Handler) searchTasks(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	h.attachTaskImageURLs(ts...)
-	h.attachTaskDocURLs(ts...)
+	h.attachments.AttachTaskImageURLs(ts...)
+	h.attachments.AttachTaskDocURLs(ts...)
 	writeJSON(c, http.StatusOK, map[string]any{"tasks": ts})
 }
 
@@ -247,8 +241,8 @@ func (h *Handler) listRunnableTasks(ctx context.Context, c *app.RequestContext) 
 		writeServiceError(c, err)
 		return
 	}
-	h.attachTaskImageURLs(ts...)
-	h.attachTaskDocURLs(ts...)
+	h.attachments.AttachTaskImageURLs(ts...)
+	h.attachments.AttachTaskDocURLs(ts...)
 	writeJSON(c, http.StatusOK, map[string]any{"tasks": ts})
 }
 
@@ -263,8 +257,8 @@ func (h *Handler) nextRunnableTask(ctx context.Context, c *app.RequestContext) {
 		writeJSON(c, http.StatusOK, map[string]any{"task": nil})
 		return
 	}
-	h.attachTaskImageURLs(t)
-	h.attachTaskDocURLs(t)
+	h.attachments.AttachTaskImageURLs(t)
+	h.attachments.AttachTaskDocURLs(t)
 	writeJSON(c, http.StatusOK, map[string]any{"task": t})
 }
 
@@ -275,8 +269,8 @@ func (h *Handler) getTask(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	h.attachTaskImageURLs(t)
-	h.attachTaskDocURLs(t)
+	h.attachments.AttachTaskImageURLs(t)
+	h.attachments.AttachTaskDocURLs(t)
 	writeJSON(c, http.StatusOK, t)
 }
 
@@ -322,8 +316,8 @@ func (h *Handler) updateTask(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	h.attachTaskImageURLs(t)
-	h.attachTaskDocURLs(t)
+	h.attachments.AttachTaskImageURLs(t)
+	h.attachments.AttachTaskDocURLs(t)
 	writeJSON(c, http.StatusOK, t)
 }
 
@@ -422,18 +416,18 @@ func (h *Handler) createDoc(ctx context.Context, c *app.RequestContext) {
 		writeError(c, http.StatusBadRequest, errors.New("doc title required"))
 		return
 	}
-	doc, err := h.saveDoc(taskID, req.Title, req.Content)
+	doc, err := h.attachments.SaveDoc(taskID, req.Title, req.Content)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, err)
 		return
 	}
 	if err := h.svc.AddDoc(ctx, doc); err != nil {
-		_ = os.Remove(doc.StoragePath)
+		_ = h.attachments.DeleteFile(doc.StoragePath)
 		writeServiceError(c, err)
 		return
 	}
 	doc.Content = req.Content
-	h.attachDocURL(doc)
+	h.attachments.AttachDocURL(doc)
 	writeJSON(c, http.StatusCreated, doc)
 }
 
@@ -444,13 +438,13 @@ func (h *Handler) getDoc(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	content, err := h.readDocContent(doc)
+	content, err := h.attachments.ReadDocContent(doc)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
 	doc.Content = string(content)
-	h.attachDocURL(doc)
+	h.attachments.AttachDocURL(doc)
 	writeJSON(c, http.StatusOK, doc)
 }
 
@@ -461,7 +455,7 @@ func (h *Handler) getDocContent(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	content, err := h.readDocContent(doc)
+	content, err := h.attachments.ReadDocContent(doc)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -502,7 +496,7 @@ func (h *Handler) updateDoc(ctx context.Context, c *app.RequestContext) {
 	}
 	var tempPath string
 	if req.Content != nil {
-		tempPath, err = h.writeDocContentTemp(doc, *req.Content)
+		tempPath, err = h.attachments.WriteDocContentTemp(doc, *req.Content)
 		if err != nil {
 			writeError(c, http.StatusInternalServerError, err)
 			return
@@ -511,25 +505,24 @@ func (h *Handler) updateDoc(ctx context.Context, c *app.RequestContext) {
 	updated, err := h.svc.UpdateDoc(ctx, id, u)
 	if err != nil {
 		if tempPath != "" {
-			_ = os.Remove(tempPath)
+			_ = h.attachments.DeleteFile(tempPath)
 		}
 		writeServiceError(c, err)
 		return
 	}
 	if req.Content != nil {
-		if err := os.Rename(tempPath, doc.StoragePath); err != nil {
-			_ = os.Remove(tempPath)
+		if err := h.attachments.CommitDocContent(doc, tempPath); err != nil {
 			writeError(c, http.StatusInternalServerError, err)
 			return
 		}
 		updated.Content = *req.Content
-	} else if content, err := h.readDocContent(updated); err != nil {
+	} else if content, err := h.attachments.ReadDocContent(updated); err != nil {
 		writeServiceError(c, err)
 		return
 	} else {
 		updated.Content = string(content)
 	}
-	h.attachDocURL(updated)
+	h.attachments.AttachDocURL(updated)
 	writeJSON(c, http.StatusOK, updated)
 }
 
@@ -541,7 +534,7 @@ func (h *Handler) deleteDoc(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	if doc.StoragePath != "" {
-		_ = os.Remove(doc.StoragePath)
+		_ = h.attachments.DeleteFile(doc.StoragePath)
 	}
 	writeJSON(c, http.StatusOK, map[string]any{"deleted": true, "id": id})
 }
@@ -558,18 +551,18 @@ func (h *Handler) uploadImage(ctx context.Context, c *app.RequestContext) {
 		writeError(c, http.StatusBadRequest, fmt.Errorf("multipart field 'file' required: %w", err))
 		return
 	}
-	saved, err := h.saveUpload(id, fh)
+	saved, err := h.attachments.SaveImage(id, fh)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, err)
 		return
 	}
 	if err := h.svc.AddImage(ctx, saved); err != nil {
 		// Roll back the file on DB failure.
-		_ = os.Remove(saved.StoragePath)
+		_ = h.attachments.DeleteFile(saved.StoragePath)
 		writeServiceError(c, err)
 		return
 	}
-	h.attachImageURL(saved)
+	h.attachments.AttachImageURL(saved)
 	writeJSON(c, http.StatusCreated, saved)
 }
 
@@ -580,27 +573,17 @@ func (h *Handler) getImage(ctx context.Context, c *app.RequestContext) {
 		writeServiceError(c, err)
 		return
 	}
-	if _, err := os.Stat(img.StoragePath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			writeServiceError(c, fmt.Errorf("%w: image file missing", store.ErrNotFound))
-			return
-		}
-		writeError(c, http.StatusInternalServerError, err)
+	content, err := h.attachments.ReadImageContent(img)
+	if err != nil {
+		writeServiceError(c, err)
 		return
 	}
-	contentType := img.MimeType
-	if contentType == "" {
-		contentType = mime.TypeByExtension(filepath.Ext(img.Filename))
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
 	c.SetStatusCode(http.StatusOK)
-	c.Response.Header.Set("Content-Type", contentType)
+	c.Response.Header.Set("Content-Type", content.ContentType)
 	c.Response.Header.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{
-		"filename": img.Filename,
+		"filename": content.Filename,
 	}))
-	c.File(img.StoragePath)
+	c.File(content.Path)
 }
 
 func (h *Handler) deleteImage(ctx context.Context, c *app.RequestContext) {
@@ -611,7 +594,7 @@ func (h *Handler) deleteImage(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	if img.StoragePath != "" {
-		_ = os.Remove(img.StoragePath)
+		_ = h.attachments.DeleteFile(img.StoragePath)
 	}
 	writeJSON(c, http.StatusOK, map[string]any{"deleted": true, "id": id})
 }
@@ -620,42 +603,6 @@ func (h *Handler) deleteImage(ctx context.Context, c *app.RequestContext) {
 
 func (h *Handler) health(_ context.Context, c *app.RequestContext) {
 	writeJSON(c, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (h *Handler) attachTaskImageURLs(tasks ...*model.Task) {
-	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
-		for i := range task.Images {
-			h.attachImageURL(&task.Images[i])
-		}
-	}
-}
-
-func (h *Handler) attachTaskDocURLs(tasks ...*model.Task) {
-	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
-		for i := range task.Docs {
-			h.attachDocURL(&task.Docs[i])
-		}
-	}
-}
-
-func (h *Handler) attachImageURL(img *model.Image) {
-	if img == nil || img.ID == "" {
-		return
-	}
-	img.URL = "/api/v1/images/" + url.PathEscape(img.ID)
-}
-
-func (h *Handler) attachDocURL(doc *model.Doc) {
-	if doc == nil || doc.ID == "" {
-		return
-	}
-	doc.URL = "/api/v1/docs/" + url.PathEscape(doc.ID) + "/content"
 }
 
 func decodeJSON(c *app.RequestContext, dst any) error {
@@ -692,102 +639,4 @@ func writeServiceError(c *app.RequestContext, err error) {
 	default:
 		writeError(c, http.StatusBadRequest, err)
 	}
-}
-
-func (h *Handler) saveUpload(taskID string, fh *multipart.FileHeader) (*model.Image, error) {
-	src, err := fh.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = src.Close() }()
-
-	taskDir := filepath.Join(h.cfg.ImagesDir, taskID)
-	if err := os.MkdirAll(taskDir, 0o700); err != nil {
-		return nil, err
-	}
-	imgID := uuid.NewString()
-	ext := filepath.Ext(fh.Filename)
-	storagePath := filepath.Join(taskDir, imgID+ext)
-	dst, err := os.Create(storagePath)
-	if err != nil {
-		return nil, err
-	}
-	written, err := io.Copy(dst, src)
-	cerr := dst.Close()
-	if err != nil {
-		_ = os.Remove(storagePath)
-		return nil, err
-	}
-	if cerr != nil {
-		_ = os.Remove(storagePath)
-		return nil, cerr
-	}
-
-	mime := "application/octet-stream"
-	if v := fh.Header.Get("Content-Type"); v != "" {
-		mime = v
-	}
-	return &model.Image{
-		ID:          imgID,
-		TaskID:      taskID,
-		Filename:    fh.Filename,
-		MimeType:    mime,
-		SizeBytes:   written,
-		StoragePath: storagePath,
-	}, nil
-}
-
-func (h *Handler) saveDoc(taskID, title, content string) (*model.Doc, error) {
-	docID := uuid.NewString()
-	taskDir := filepath.Join(h.cfg.DocsDir, taskID)
-	if err := os.MkdirAll(taskDir, 0o700); err != nil {
-		return nil, err
-	}
-	storagePath := filepath.Join(taskDir, docID+".md")
-	if err := os.WriteFile(storagePath, []byte(content), 0o600); err != nil {
-		return nil, err
-	}
-	return &model.Doc{
-		ID:          docID,
-		TaskID:      taskID,
-		Title:       title,
-		StoragePath: storagePath,
-	}, nil
-}
-
-func (h *Handler) readDocContent(doc *model.Doc) ([]byte, error) {
-	content, err := os.ReadFile(doc.StoragePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%w: doc file missing", store.ErrNotFound)
-		}
-		return nil, err
-	}
-	return content, nil
-}
-
-func (h *Handler) writeDocContentTemp(doc *model.Doc, content string) (string, error) {
-	dir := filepath.Dir(doc.StoragePath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	temp, err := os.CreateTemp(dir, filepath.Base(doc.StoragePath)+".*.tmp")
-	if err != nil {
-		return "", err
-	}
-	tempPath := temp.Name()
-	if _, err := temp.WriteString(content); err != nil {
-		_ = temp.Close()
-		_ = os.Remove(tempPath)
-		return "", err
-	}
-	if err := temp.Close(); err != nil {
-		_ = os.Remove(tempPath)
-		return "", err
-	}
-	if err := os.Chmod(tempPath, 0o600); err != nil {
-		_ = os.Remove(tempPath)
-		return "", err
-	}
-	return tempPath, nil
 }
